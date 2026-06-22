@@ -69,16 +69,9 @@ def _cmd_bin_to_hex(argv):
     main()
 
 
-def _cmd_set_dtb_property(argv):
-    sys.argv = ["qcom-capsule-tool set-dtb-property"] + argv
-    from qcom_capsule_tool.set_dtb_property import main
-
-    main()
-
-
-def _cmd_parse_config(argv):
-    sys.argv = ["qcom-capsule-tool parse-config"] + argv
-    from qcom_capsule_tool.xblconfig_parser import main
+def _cmd_patch_capsule_cert(argv):
+    sys.argv = ["qcom-capsule-tool patch-capsule-cert"] + argv
+    from qcom_capsule_tool.patch_capsule_cert import main
 
     main()
 
@@ -94,8 +87,10 @@ SUBCOMMANDS = {
         _cmd_sysfw_version_create,
     ),
     "bin-to-hex": ("Convert a binary file to hex format", _cmd_bin_to_hex),
-    "set-dtb-property": ("Set or add a property in a DTB file", _cmd_set_dtb_property),
-    "parse-config": ("Inspect or patch xbl_config.elf payloads", _cmd_parse_config),
+    "patch-capsule-cert": (
+        "Patch QcCapsuleRootCert in a uefi_dtbs or xbl_config ELF (auto-detected)",
+        _cmd_patch_capsule_cert,
+    ),
 }
 
 
