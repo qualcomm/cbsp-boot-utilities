@@ -53,8 +53,7 @@ Subcommands wrap the individual tools:
 | `update-json`           | `UpdateJsonParameters.py`   |
 | `sysfw-version-create`  | `SYSFW_VERSION_program.py`  |
 | `bin-to-hex`            | `BinToHex.py`               |
-| `set-dtb-property`      | `set_dtb_property.py`       |
-| `parse-config`          | `xblconfig_parser.py`       |
+| `patch-capsule-cert`    | `patch_capsule_cert.py`     |
 
 ### 2.2 Quick start with Make
 
@@ -111,68 +110,69 @@ QcFMPRoot.pub.pem
 QcFMPSub.pub.pem
 ```
 
-The `QcFMPRoot.cer` (or `NewRoot.cer`) should be converted to a hex value.
+The `QcFMPRoot.cer` (or `NewRoot.cer`) is the DER certificate file used by
+`patch-capsule-cert` to update the `QcCapsuleRootCert` property directly
+in `uefi_dtbs.elf` or `xbl_config.elf` (see section 3.2).
 
-Use the `bin-to-hex` subcommand to convert `NewRoot.cer` to a hex value:
+If you are using the QDTE tool instead, convert the `.cer` to a hex value
+first with `bin-to-hex`:
 
 ```sh
 qcom-capsule-tool bin-to-hex NewRoot.cer NewRoot.inc
 ```
 
-This `NewRoot.inc` contains the cert value, which needs to be provided in the BOOT DT [will be part of `xbl_config.elf`] for QCS6490,QCS9100,QCS8300,QCS615 or in UEFI DT [will be part of `uefi_dtbs.elf`] for IQ-X7181,IQ-X5121,Kaanapali,SM8750,QRB2210-RB1,CQ2390M targets at node
-`/sw/uefi/uefiplat/QcCapsuleRootCert` using QDTE tool.
+`NewRoot.inc` contains the cert as a list of 32-bit hex integers, which
+QDTE writes into the `/sw/uefi/uefiplat/QcCapsuleRootCert` node of the
+appropriate DTB.
 
 For more information on the QDTE Tool, refer to the
 [QDTE Tool documentation][qdte-tool].
 
 [qdte-tool]: https://docs.qualcomm.com/bundle/publicresource/topics/80-70017-4/tools.html?vproduct=1601111740013072&version=1.3&facet=Boot#qdte
 
+> **Note**: For QLI Hamoa/Purwa, `uefi_dtbs.elf` must be compressed with
+> `xz` before flashing:
+>
+> ```sh
+> xz -k uefi_dtbs.elf   # -k keeps the original uncompressed file
+> ```
 
-*Please Note - for QLI Hamoa/Purwa uefi_dtbs.elf needs to compressed using xz tool and then flashed.
+
+### 3.2 Setting QcCapsuleRootCert Without QDTE
+
+As an alternative to QDTE, use the `patch-capsule-cert` subcommand to patch
+the certificate directly into `uefi_dtbs.elf` or `xbl_config.elf`. The ELF
+type is auto-detected at runtime, so the same command and `.cer` file work
+for both targets.
+
+```sh
+qcom-capsule-tool patch-capsule-cert <input.elf> <cert.cer> <output.elf>
 ```
-xz -k uefi_dtbs.elf
 
-Usage:
-xz -k  <InputFile>
--k : to keep the original uncompressed file
+- `<input.elf>`: Input ELF file — either `uefi_dtbs.elf` (for targets
+  IQ-X7181, IQ-X5121, Kaanapali, SM8750, QRB2210-RB1, CQ2390M) or
+  `xbl_config.elf` (for QCS6490, QCS9100, QCS8300, QCS615).
+- `<cert.cer>`: DER certificate file (e.g. `QcFMPRoot.cer` or `NewRoot.cer`).
+- `<output.elf>`: Path for the patched output ELF.
+
+Optional arguments:
+
+- `--prop-name <name>`: DTB property name to patch (default: `QcCapsuleRootCert`).
+- `--meta-ph <index>`: XBLConfig metadata program-header index (default: `1`).
+
+Example for a `uefi_dtbs` target:
+
+```sh
+qcom-capsule-tool patch-capsule-cert \
+  uefi_dtbs.elf QcFMPRoot.cer uefi_dtbs_patched.elf
 ```
 
+Example for a `xbl_config` target:
 
-### 3.2 Setting QcCapsuleRootCert Without QDTE (for targets - QCS6490, QCS9100, QCS8300, QCS615)
-
-As an alternative to QDTE, you can patch the certificate directly into
-`xbl_config.elf` using `xblconfig_parser.py` and `set_dtb_property.py`.
-
-1. Extract all DTB payloads from `xbl_config.elf`:
-
-   ```sh
-   qcom-capsule-tool parse-config xbl_config.elf dump --out-dir ./out
-   ```
-
-1. Patch the `QcCapsuleRootCert` property into the appropriate DTB.
-   The target is the DTB containing the `/sw/uefi/uefiplat` node
-   (typically a `post-ddr` DTB):
-
-   ```sh
-   qcom-capsule-tool set-dtb-property \
-     out/<post-ddr-dtb>.dtb \
-     /sw/uefi/uefiplat \
-     QcCapsuleRootCert \
-     @list:QcFMPRoot.inc \
-     out/<post-ddr-dtb>_patched.dtb
-   ```
-
-   The `@list:QcFMPRoot.inc` argument reads the integer list produced by
-   `bin-to-hex` and encodes it as 32-bit big-endian words into the DTB
-   property.
-
-1. Replace the patched DTB back into `xbl_config.elf`. Use the program
-   header index (`<ph_num>`) shown by the `dump` step above:
-
-   ```sh
-   qcom-capsule-tool parse-config xbl_config.elf replace \
-     <ph_num> out/<post-ddr-dtb>_patched.dtb xbl_config_patched.elf
-   ```
+```sh
+qcom-capsule-tool patch-capsule-cert \
+  xbl_config.elf QcFMPRoot.cer xbl_config_patched.elf
+```
 
 ## 4. Steps to Generate Capsule Files
 
@@ -306,7 +306,7 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    
 
 
-2. **Generate the Capsule File:**
+1. **Generate the Capsule File:**
 
    ```sh
    python3 build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py \

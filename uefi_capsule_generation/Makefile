@@ -194,9 +194,8 @@ $(WORK)/.bootbinaries.unpacked: $(CACHE)/$(TARGET)-bootbinaries.zip | $(WORK)
 	touch $@
 
 # ---- XBLConfig DTB patching ----------------------------------------
-# Dump xbl_config.elf, locate the post-ddr DTB and its program-header
-# index from the dump output, inject the new cert, then write the
-# patched DTB back into xbl_config.elf.
+# Patch QcCapsuleRootCert into xbl_config.elf.  patch-capsule-cert
+# auto-detects the ELF type and locates the correct DTB segment.
 
 $(WORK)/.xbl_config.patched: $(WORK)/.bootbinaries.unpacked $(CERTS)/QcFMPRoot.inc $(INSTALL_STAMP)
 	set -e; \
@@ -206,22 +205,8 @@ $(WORK)/.xbl_config.patched: $(WORK)/.bootbinaries.unpacked $(CERTS)/QcFMPRoot.i
 	if [ ! -f "$$xbl" ]; then \
 	    echo "ERROR: $$xbl not found in extracted boot binaries"; exit 1; \
 	fi; \
-	dump_dir=$$(towin $(WORK)/xbl_dump); \
-	rm -rf $$dump_dir; mkdir -p $$dump_dir; \
-	dump_out=$$($(QCT) parse-config $$xbl dump --out-dir $$dump_dir); \
-	echo "$$dump_out"; \
-	line=$$(echo "$$dump_out" | grep -E "PH#.*post-ddr-.*\.dtb" | head -1); \
-	if [ -z "$$line" ]; then \
-	    echo "ERROR: no post-ddr-*.dtb found in xbl_config.elf dump"; exit 1; \
-	fi; \
-	ph_index=$$(echo "$$line" | sed -nE "s/.*PH#[[:space:]]*([0-9]+).*/\1/p"); \
-	dtb=$$(echo "$$line" | sed -nE "s/.*'([^']+\.dtb)'.*/\1/p"); \
-	echo "post-ddr DTB: $$dtb  (PH#$$ph_index)"; \
-	inc=$$(towin $(CERTS)/QcFMPRoot.inc); \
-	$(QCT) set-dtb-property "$$dtb" /sw/uefi/uefiplat \
-	    QcCapsuleRootCert "@list:$$inc" "$$dtb.patched"; \
-	$(QCT) parse-config "$$xbl" replace "$$ph_index" \
-	    "$$dtb.patched" "$$xbl.patched"; \
+	cer=$$(towin $(CERTS)/QcFMPRoot.cer); \
+	$(QCT) patch-capsule-cert "$$xbl" "$$cer" "$$xbl.patched"; \
 	mv "$$xbl.patched" "$$xbl"; \
 	touch $@
 
