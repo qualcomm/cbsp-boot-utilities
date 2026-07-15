@@ -41,6 +41,13 @@ def _cmd_fv_create(argv):
     main()
 
 
+def _cmd_generate_capsule(argv):
+    sys.argv = ["qcom-capsule-tool generate-capsule"] + argv
+    from qcom_capsule_tool.generate_capsule import main
+
+    main()
+
+
 def _cmd_update_fv_xml(argv):
     sys.argv = ["qcom-capsule-tool update-fv-xml"] + argv
     from qcom_capsule_tool.UpdateFvXml import main
@@ -80,6 +87,10 @@ SUBCOMMANDS = {
     "setup": ("Set up edk2 build environment", _cmd_setup),
     "create": ("Run the full capsule generation pipeline", _cmd_create),
     "fv-create": ("Create a firmware volume from XML + binaries", _cmd_fv_create),
+    "generate-capsule": (
+        "Generate a signed FMP capsule from JSON",
+        _cmd_generate_capsule,
+    ),
     "update-fv-xml": ("Generate FvUpdate.xml from partitions.conf", _cmd_update_fv_xml),
     "update-json": ("Update JSON config with firmware parameters", _cmd_update_json),
     "sysfw-version-create": (
