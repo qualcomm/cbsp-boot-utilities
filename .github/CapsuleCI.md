@@ -16,17 +16,14 @@ same steps a developer would follow locally (see
 ## Stages
 
 1. **Setup Python** -- Installs Python 3.11 via `actions/setup-python`.
-1. **Install system dependencies** -- Installs `uuid-dev`,
-   `device-tree-compiler`, and Python packages (`validators`, `requests`,
-   `pyelftools`, `pylibfdt`).
+1. **Install system dependencies** -- Installs `device-tree-compiler` and
+   Python packages (`validators`, `requests`, `pyelftools`, `pylibfdt`).
 1. **Generate OpenSSL certificates** -- Creates a full certificate chain
    (Root CA, Intermediate CA, User) using OpenSSL. Certificates are stored
    in `$CERT_PATH` and used for capsule signing. Uses the OpenSSL
    configuration from [opensslroot.cfg](opensslroot.cfg).
 1. **Convert certificate to HEX** -- Runs `BinToHex.py` to convert the Root
    CA certificate (DER) into a HEX include file for embedding in XBLConfig.
-1. **Setup environment** -- Runs `capsule_setup.py` to clone and build the
-   required EDK2 tooling (`GenerateCapsule`, `GenFv`, etc.).
 1. **Fetch boot binaries** -- Downloads the QCM6490 boot binaries archive
    from Qualcomm Artifactory and extracts it.
 1. **Add certificates to XBLConfig** -- Dumps sections from `xbl_config.elf`,
@@ -38,8 +35,10 @@ same steps a developer would follow locally (see
    containing the boot binaries and version info.
 1. **Update JSON parameters** -- Populates `config.json` with firmware type,
    paths to the firmware volume, signing certificates, and the FMP GUID.
-1. **Generate capsule file** -- Runs `GenerateCapsule.py` to produce the
-   final signed `capsule_file.cap`.
+1. **Generate capsule file** -- Runs `qcom-capsule-tool generate-capsule`
+   to produce the final signed `capsule_file.cap`. FFS/FV/capsule images
+   are generated natively in Python; no EDK2 checkout or BaseTools
+   binaries are required.
 1. **Dump capsule information** -- Prints the capsule metadata for
    verification.
 
@@ -62,7 +61,7 @@ To reproduce the CI flow locally, ensure the following are installed:
 
 - Python 3.11+
 - OpenSSL
-- `uuid-dev` and `device-tree-compiler` system packages
+- `device-tree-compiler` system package
 - Python packages: `validators`, `requests`, `pyelftools`, `pylibfdt`
 
 Then follow the stages above in order from within the
