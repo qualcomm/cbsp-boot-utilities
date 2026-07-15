@@ -15,7 +15,6 @@ sVersion = "1.0"
 S_SIGNATURE = "SYSFWVER"
 S_REVISION = "1.0"
 QSYS_FW_VERSION_DATA_VERSIONDATACRC32 = 0
-tempfile = ".\\python_version"
 
 
 class QSYS_FW_VERSION_DATA(ctypes.Structure):

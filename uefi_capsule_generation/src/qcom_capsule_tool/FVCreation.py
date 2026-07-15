@@ -21,7 +21,6 @@ from . import XmlParser as xp
 
 print_logs = 0
 
-EXECUTABLE_BLOCK_SIZE = 4096
 TOOL_VERSION_STRING = "1.1"
 SYS_FW_METADATA_HEADER_SIGNATURE1 = 0x2E1946FB
 SYS_FW_METADATA_HEADER_SIGNATURE2 = 0x7F744D57
@@ -154,32 +153,6 @@ def CalcCRC32_i(buffer_b, l_i):
     regs_i = regs_i & regsMask_i
 
     return Reflect(regs_i, 32) ^ int(0xFFFFFFFF)
-
-
-def regenerate_all_executables():
-    ls_executables = []
-    cur_directory = os.getcwd()
-    resource_files = [
-        f
-        for f in os.listdir(cur_directory)
-        if os.path.isfile(os.path.join(cur_directory, f))
-    ]
-
-    for resource in resource_files:
-        ls_executables.append(resource)
-        output_file = os.path.join(cur_directory, resource)
-        if os.path.exists(output_file):
-            os.remove(output_file)
-
-        with open(output_file, "wb") as fs_stream:
-            with open(resource, "rb") as st_resource:
-                while True:
-                    buffer = st_resource.read(EXECUTABLE_BLOCK_SIZE)
-                    if not buffer:
-                        break
-                    fs_stream.write(buffer)
-
-    return ls_executables
 
 
 def generate_fv(s_output_file_name, ls_ffs):
@@ -749,9 +722,9 @@ def The_Main(args):
     else:
         print("FV created successfully")
 
-    for file in os.listdir("."):
-        if file.endswith((".ffs", ".inf", ".fv.txt", ".fv.map", ".dat")):
-            os.remove(file)
+    # Remove only the intermediates this run created, never other
+    # files that happen to share an extension with them.
+    remove_files(ls_ffs + [SYS_FW_METADATA_FILE])
 
 
 def main():
