@@ -20,13 +20,6 @@ import sys
 # when their subcommand is actually invoked.
 
 
-def _cmd_setup(argv):
-    sys.argv = ["qcom-capsule-tool setup"] + argv
-    from qcom_capsule_tool.capsule_setup import main
-
-    main()
-
-
 def _cmd_create(argv):
     sys.argv = ["qcom-capsule-tool create"] + argv
     from qcom_capsule_tool.capsule_creator import main
@@ -91,7 +84,6 @@ def _cmd_parse_config(argv):
 
 
 SUBCOMMANDS = {
-    "setup": ("Set up edk2 build environment", _cmd_setup),
     "create": ("Run the full capsule generation pipeline", _cmd_create),
     "fv-create": ("Create a firmware volume from XML + binaries", _cmd_fv_create),
     "generate-capsule": (
