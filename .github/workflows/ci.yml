@@ -27,6 +27,9 @@ jobs:
       - name: make lint
         run: make lint
 
+      - name: make unittest
+        run: make unittest
+
   # ---- End-to-end capsule generation per chip ------------------------
   test:
     runs-on: ${{ matrix.os }}
