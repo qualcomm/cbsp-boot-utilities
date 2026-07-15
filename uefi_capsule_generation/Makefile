@@ -7,8 +7,7 @@
 #   make install   - poetry install (creates the project venv)
 #   make lint      - ruff check, ruff format --check, mypy
 #   make format    - ruff format (writes changes)
-#   make unittest  - pytest unit tests (golden FFS/FV fixtures)
-#   make setup     - clone + build edk2 BaseTools into build/edk2
+#   make unittest  - pytest unit tests (golden FFS/FV/capsule fixtures)
 #   make test      - end-to-end capsule generation for $(TARGET)
 #   make test-all  - loop `make test` over every supported chip
 #   make clean     - remove the build/ tree
@@ -67,7 +66,6 @@ REPO_ROOT   := $(abspath $(PROJECT_DIR)/..)
 BUILD       := $(PROJECT_DIR)/build
 CACHE       := $(BUILD)/cache
 CERTS       := $(BUILD)/certs
-EDK2        := $(BUILD)/edk2
 WORK        := $(BUILD)/$(TARGET)
 
 OPENSSL_CFG := $(REPO_ROOT)/.github/opensslroot.cfg
@@ -78,7 +76,6 @@ POETRY              ?= poetry
 POETRY_RUN          := $(POETRY) run
 POETRY_INSTALL_OPTS ?=
 QCT                 := $(POETRY_RUN) qcom-capsule-tool
-PY                  := $(POETRY_RUN) python3
 
 # Sentinel marking that `poetry install` has succeeded for the current
 # pyproject.toml. Recipes that need the venv depend on this file.
@@ -86,10 +83,10 @@ INSTALL_STAMP := $(BUILD)/.poetry-install.stamp
 
 # ---- Top-level targets ----------------------------------------------
 
-.PHONY: install lint format unittest setup test test-all clean check-target help
+.PHONY: install lint format unittest test test-all clean check-target help
 
 help:
-	@echo 'Targets: install lint format unittest setup test test-all clean'
+	@echo 'Targets: install lint format unittest test test-all clean'
 	@echo 'Variables: TARGET ($(TARGET))'
 	@echo 'Supported: $(SUPPORTED_TARGETS)'
 
@@ -120,8 +117,6 @@ check-target:
 		exit 1; \
 	fi
 
-setup: $(EDK2)/BaseTools/Source/C/bin/GenFv
-
 test: check-target $(WORK)/capsule_file.cap
 	@echo
 	@echo "=== capsule generated: $(WORK)/capsule_file.cap ==="
@@ -132,11 +127,6 @@ test-all:
 		echo "===== make test TARGET=$$t ====="; \
 		$(MAKE) test TARGET=$$t || exit $$?; \
 	done
-
-# ---- edk2 setup -----------------------------------------------------
-
-$(EDK2)/BaseTools/Source/C/bin/GenFv: $(INSTALL_STAMP) | $(BUILD)
-	cd $(BUILD) && $(QCT) setup
 
 # ---- Download cache -------------------------------------------------
 
@@ -219,7 +209,6 @@ $(WORK)/.xbl_config.patched: $(WORK)/.bootbinaries.unpacked $(CERTS)/QcFMPRoot.i
 $(WORK)/capsule_file.cap: \
 		$(WORK)/.xbl_config.patched \
 		$(CERTS)/QcFMPRoot.inc \
-		$(EDK2)/BaseTools/Source/C/bin/GenFv \
 		| $(WORK)
 	set -e; \
 	cd $(WORK); \
@@ -234,11 +223,6 @@ $(WORK)/capsule_file.cap: \
 	    -x $(CERTS)/QcFMPRoot.pub.pem \
 	    -oc $(CERTS)/QcFMPSub.pub.pem \
 	    -g $(FMP_GUID); \
-	ln -sfn $(EDK2)/BaseTools/Source/Python/Common Common; \
-	PYTHONPATH=$(WORK) \
-	    $(PY) $(EDK2)/BaseTools/Source/Python/Capsule/GenerateCapsule.py \
-	        -e -j config.json -o capsule_file.cap \
-	        --capflag PersistAcrossReset -v; \
-	PYTHONPATH=$(WORK) \
-	    $(PY) $(EDK2)/BaseTools/Source/Python/Capsule/GenerateCapsule.py \
-	        --dump-info capsule_file.cap
+	$(QCT) generate-capsule -e -j config.json -o capsule_file.cap \
+	    --capflag PersistAcrossReset -v; \
+	$(QCT) generate-capsule --dump-info capsule_file.cap
