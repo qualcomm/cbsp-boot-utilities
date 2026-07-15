@@ -20,6 +20,7 @@ pylibfdt = "*"
 ruff = "0.15.16"
 mypy = "1.19.1"
 types-requests = "*"
+pytest = "^8.0"
 
 [tool.poetry.scripts]
 qcom-capsule-tool = "qcom_capsule_tool.cli:main"

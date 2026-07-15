@@ -7,6 +7,7 @@
 #   make install   - poetry install (creates the project venv)
 #   make lint      - ruff check, ruff format --check, mypy
 #   make format    - ruff format (writes changes)
+#   make unittest  - pytest unit tests (golden FFS/FV fixtures)
 #   make setup     - clone + build edk2 BaseTools into build/edk2
 #   make test      - end-to-end capsule generation for $(TARGET)
 #   make test-all  - loop `make test` over every supported chip
@@ -85,10 +86,10 @@ INSTALL_STAMP := $(BUILD)/.poetry-install.stamp
 
 # ---- Top-level targets ----------------------------------------------
 
-.PHONY: install lint format setup test test-all clean check-target help
+.PHONY: install lint format unittest setup test test-all clean check-target help
 
 help:
-	@echo 'Targets: install lint format setup test test-all clean'
+	@echo 'Targets: install lint format unittest setup test test-all clean'
 	@echo 'Variables: TARGET ($(TARGET))'
 	@echo 'Supported: $(SUPPORTED_TARGETS)'
 
@@ -99,9 +100,12 @@ $(INSTALL_STAMP): pyproject.toml | $(BUILD)
 	touch $@
 
 lint: $(INSTALL_STAMP)
-	$(POETRY_RUN) ruff check src
-	$(POETRY_RUN) ruff format --check src
+	$(POETRY_RUN) ruff check src tests
+	$(POETRY_RUN) ruff format --check src tests
 	$(POETRY_RUN) mypy src/qcom_capsule_tool
+
+unittest: $(INSTALL_STAMP)
+	$(POETRY_RUN) pytest tests
 
 format: $(INSTALL_STAMP)
 	$(POETRY_RUN) ruff format src
