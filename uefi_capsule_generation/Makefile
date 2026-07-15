@@ -242,7 +242,7 @@ $(WORK)/capsule_file.cap: \
 	$(QCT) sysfw-version-create -Gen \
 	    -FwVer $(FW_VERSION) -LFwVer $(LOWEST_FW_VER) -O SYSFW_VERSION.bin; \
 	$(QCT) fv-create firmware.fv -FvType SYS_FW FvUpdate.xml \
-	    SYSFW_VERSION.bin ./bootbinaries --edk2-path $(EDK2); \
+	    SYSFW_VERSION.bin ./bootbinaries; \
 	$(QCT) update-json -j config.json -f SYS_FW \
 	    -b SYSFW_VERSION.bin -pf firmware.fv \
 	    -p $(CERTS)/QcFMPCert.pem \
