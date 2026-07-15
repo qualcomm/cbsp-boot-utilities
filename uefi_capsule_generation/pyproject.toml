@@ -12,14 +12,12 @@ packages = [{ include = "qcom_capsule_tool", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-requests = "*"
 pyelftools = "*"
 pylibfdt = "*"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "*"
 mypy = "*"
-types-requests = "*"
 pytest = "^8.0"
 
 [tool.poetry.scripts]
