@@ -46,9 +46,9 @@ Subcommands wrap the individual tools:
 
 | Subcommand              | Replaces script             |
 | ----------------------- | --------------------------- |
-| `setup`                 | `capsule_setup.py`          |
 | `create`                | `capsule_creator.py`        |
 | `fv-create`             | `FVCreation.py`             |
+| `generate-capsule`      | edk2 `GenerateCapsule.py`   |
 | `update-fv-xml`         | `UpdateFvXml.py`            |
 | `update-json`           | `UpdateJsonParameters.py`   |
 | `sysfw-version-create`  | `SYSFW_VERSION_program.py`  |
@@ -63,7 +63,7 @@ under the hood):
 ```sh
 make install     # poetry install
 make lint        # ruff check + ruff format --check + mypy
-make setup       # clone + build edk2 into build/edk2
+make unittest    # pytest unit tests (golden FFS/FV/capsule fixtures)
 make test TARGET=qcs6490   # end-to-end capsule generation for a chip
 make test-all              # iterate over every supported chip
 make clean
@@ -92,8 +92,6 @@ lands in `build/$(TARGET)/capsule_file.cap`.
 1. **OpenSSL**: Same as above.
 1. **Python3**: Same as above.
 1. **GIT**: version control system.
-1. **Visual Studio with C++ Development Tools**: An integrated development
-   environment (IDE) from Microsoft, including tools for C++ development.
 
 Before starting the capsule generation process, you need to generate OpenSSL
 certificates as mentioned in
@@ -183,20 +181,6 @@ Clone the repository and enter the
 git clone https://github.com/quic/cbsp-boot-utilities.git
 ```
 
-1. **Setup the Environment:**
-
-   ```sh
-   qcom-capsule-tool setup
-   ```
-
-   This clones edk2 (shallow, brotli submodule only), builds `GenFfs`/
-   `GenFv`, and downloads `GenerateCapsule.py` next to the working
-   directory.
-
-   If you already have a local edk2 build, you can skip this step and
-   pass `--edk2-path <dir>` to `fv-create` / `create` instead (see steps
-   4 and 5).
-
 1. **Generate Firmware Version bin File:**
 
    ```sh
@@ -264,9 +248,9 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `SYSFW_VERSION.bin`: The firmware version file generated in the
      previous step.
    - `Images/`: Directory containing the images.
-   - `--edk2-path <dir>`: Path to an existing edk2 directory with built
-     `GenFfs`/`GenFv` tools. When provided, `setup` does not need to be
-     run. Binaries are resolved from `<dir>/BaseTools/Source/C/bin/`.
+
+   FFS and FV images are generated natively in Python; no edk2
+   checkout or BaseTools binaries are required.
 
 1. **Update JSON Parameters:**
 
@@ -309,7 +293,7 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
 1. **Generate the Capsule File:**
 
    ```sh
-   python3 build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py \
+   qcom-capsule-tool generate-capsule \
      -e -j config.json \
      -o <capsule_name>.cap \
      --capflag PersistAcrossReset \
@@ -322,15 +306,14 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `--capflag PersistAcrossReset`: Flag to persist across reset.
    - `-v`: Verbose mode.
 
-   `GenerateCapsule.py` is provided by edk2 upstream and is not part of
-   `qcom-capsule-tool`. After `qcom-capsule-tool setup`, it lives at
-   `build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py`.
+   The subcommand is a drop-in replacement for the JSON encode mode of
+   edk2 `GenerateCapsule.py` (OpenSSL signing); no edk2 checkout is
+   required.
 
    To dump info from the Capsule headers:
 
    ```sh
-   python3 build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py \
-     --dump-info capsule.cap
+   qcom-capsule-tool generate-capsule --dump-info capsule.cap
    ```
 
 ## 5. Alternative: Master Script
@@ -349,40 +332,13 @@ qcom-capsule-tool create \
   -guid <ESRT GUID> \
   -capsule <capsule_name>.cap \
   -images /Images \
-  -setup \
   -S <StorageType> \
-  -T <Target>
+  -T <Target> \
+  --ptool-path /path/to/qcom-ptool
 ```
 
  - `-S <StorageType>`: Storage type, `EMMC` or `UFS`.
  - `-T <Target>`: Target platform, `QCS6490`, `QCS9100`, `QCS8300`,
    or `QCS615`.
-
-The **-setup** parameter is optional and can be used for the initial setup.
-You can omit it in subsequent runs.
-
-If you have a local edk2 build and/or a local `qcom-ptool` checkout,
-you can skip the setup step entirely by providing their paths directly:
-
-```sh
-qcom-capsule-tool create \
-  -fwver 0.0.A.B \
-  -lfwver 0.0.0.0 \
-  -config config.json \
-  -p Certificates/QcFMPCert.pem \
-  -x Certificates/QcFMPRoot.pub.pem \
-  -oc Certificates/QcFMPSub.pub.pem \
-  -guid <ESRT GUID> \
-  -capsule <capsule_name>.cap \
-  -images /Images \
-  -S <StorageType> \
-  -T <Target> \
-  --edk2-path /path/to/edk2 \
-  --ptool-path /path/to/qcom-ptool
-```
-
- - `--edk2-path <dir>`: Path to an existing edk2 directory with built
-   `GenFfs`/`GenFv` tools. `GenerateCapsule.py` and its `Common/`
-   dependency are also resolved from this tree.
- - `--ptool-path <dir>`: Path to an existing `qcom-ptool` checkout.
-   When provided, the repository is not cloned from GitHub.
+ - `--ptool-path <dir>`: Optional path to an existing `qcom-ptool`
+   checkout. When provided, the repository is not cloned from GitHub.

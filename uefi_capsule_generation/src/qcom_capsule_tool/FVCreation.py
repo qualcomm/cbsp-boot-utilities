@@ -7,24 +7,20 @@
 import binascii
 import ctypes
 import os
-import platform
 import re
-import shutil
 import struct
-import subprocess
 import sys
 import traceback
 import uuid
 from enum import Enum
 
+from . import fv_builder
 from . import FVCreation_header as FVC_h
 from . import XmlFwEntryValidation as XFEV
 from . import XmlParser as xp
 
 print_logs = 0
 
-EXECUTABLE_BLOCK_SIZE = 4096
-FV_MAIN_INF_NAME = "FVMain.inf"
 TOOL_VERSION_STRING = "1.1"
 SYS_FW_METADATA_HEADER_SIGNATURE1 = 0x2E1946FB
 SYS_FW_METADATA_HEADER_SIGNATURE2 = 0x7F744D57
@@ -158,115 +154,13 @@ def CalcCRC32_i(buffer_b, l_i):
     return Reflect(regs_i, 32) ^ int(0xFFFFFFFF)
 
 
-def execute_command_linux(s_command):
+def generate_fv(s_output_file_name, ls_ffs):
     try:
-        result = subprocess.run(s_command, capture_output=True, text=True, shell=True)
-        print(result.stdout)
-        if result.stderr:
-            print(result.stderr)
-    except Exception as e:
-        print(f"Exception running command: {e}\n")
-
-
-def _default_edk2_tools_dir():
-    """Return the default edk2 tools directory ($PWD/edk2/BaseTools/Source/C/bin)."""
-    return os.path.join(os.getcwd(), "edk2", "BaseTools", "Source", "C", "bin")
-
-
-def _resolve_tools_dir(tool_name):
-    """Prefer PATH lookup; fall back to $PWD/edk2/BaseTools/Source/C/bin."""
-    found = shutil.which(tool_name)
-    if found:
-        return os.path.dirname(found)
-    return _default_edk2_tools_dir()
-
-
-def _tool_path(tools_dir, name):
-    """Return the full path to an edk2 BaseTools binary, with .exe on Windows."""
-    if platform.system() == "Windows" and not name.endswith(".exe"):
-        name = name + ".exe"
-    return os.path.join(tools_dir, name)
-
-
-def regenerate_all_executables():
-    ls_executables = []
-    cur_directory = os.getcwd()
-    resource_files = [
-        f
-        for f in os.listdir(cur_directory)
-        if os.path.isfile(os.path.join(cur_directory, f))
-    ]
-
-    for resource in resource_files:
-        ls_executables.append(resource)
-        output_file = os.path.join(cur_directory, resource)
-        if os.path.exists(output_file):
-            os.remove(output_file)
-
-        with open(output_file, "wb") as fs_stream:
-            with open(resource, "rb") as st_resource:
-                while True:
-                    buffer = st_resource.read(EXECUTABLE_BLOCK_SIZE)
-                    if not buffer:
-                        break
-                    fs_stream.write(buffer)
-
-    return ls_executables
-
-
-def generate_fv_main_file(lsFFsFiles):
-    if os.path.exists(FV_MAIN_INF_NAME):
-        os.remove(FV_MAIN_INF_NAME)
-
-    try:
-        with open(FV_MAIN_INF_NAME, "w") as sw:
-            sw.write("[options]\n")
-            sw.write("EFI_BLOCK_SIZE  = 0x40\n")
-            sw.write("EFI_NUM_BLOCKS   =  0x0\n")
-            sw.write("[attributes]\n")
-            sw.write("EFI_ERASE_POLARITY   =  1\n")
-            sw.write("EFI_WRITE_ENABLED_CAP = TRUE\n")
-            sw.write("EFI_READ_ENABLED_CAP = TRUE\n")
-            sw.write("EFI_READ_LOCK_STATUS = TRUE\n")
-            sw.write("EFI_WRITE_STATUS = TRUE\n")
-            sw.write("EFI_READ_DISABLED_CAP = TRUE\n")
-            sw.write("EFI_WRITE_LOCK_STATUS = TRUE\n")
-            sw.write("EFI_LOCK_CAP = TRUE\n")
-            sw.write("EFI_LOCK_STATUS = TRUE\n")
-            sw.write("EFI_ERASE_POLARITY = 1\n")
-            sw.write("EFI_MEMORY_MAPPED = TRUE\n")
-            sw.write("EFI_READ_LOCK_CAP = TRUE\n")
-            sw.write("EFI_WRITE_DISABLED_CAP = TRUE\n")
-            sw.write("EFI_READ_STATUS = TRUE\n")
-            sw.write("EFI_WRITE_LOCK_CAP = TRUE\n")
-            sw.write("EFI_STICKY_WRITE = TRUE\n")
-            sw.write("EFI_FVB2_ALIGNMENT_8 = TRUE\n")
-            sw.write("[files]\n")
-            for sFile in lsFFsFiles:
-                sw.write("EFI_FILE_NAME = " + sFile + "\n")
-        return True
-    except Exception:
-        print(f"Error creating {FV_MAIN_INF_NAME} file.")
+        fv_builder.write_fv(s_output_file_name, ls_ffs)
+    except (OSError, ValueError) as e:
+        print(f"ERROR: Failure creating FV file {s_output_file_name}: {e}")
         return False
-
-
-def generate_fv(s_output_file_name, ls_ffs, s_gen_fv, tools_dir=None):
-    bReturn = False
-    if not generate_fv_main_file(ls_ffs):
-        print(f"ERROR: Failure creating {FV_MAIN_INF_NAME} file.")
-        return False
-
-    if tools_dir is None:
-        tools_dir = _resolve_tools_dir("GenFv")
-    sFVCommand = f"{_tool_path(tools_dir, 'GenFv')} -o {s_output_file_name} -i {FV_MAIN_INF_NAME} -v"
-    execute_command_linux(sFVCommand)
-
-    if not os.path.exists(s_output_file_name):
-        bReturn = False
-    else:
-        bReturn = True
-
-    return bReturn
+    return True
 
 
 def validate_sys_fw_ver_binary_file(fw_ver_binary_data):
@@ -489,13 +383,11 @@ def generate_sys_fw_meta_data_file(
 def process_sys_fw_ffs_creation(
     s_xml_file_name,
     s_fw_ver_binary_file,
-    s_gen_ffs,
     s_breaking_change_number,
     fw_ver_binary_data,
     ls_ffs,
     ls_paths,
     g_dynamic_var,
-    tools_dir=None,
 ):
     try:
         #
@@ -558,9 +450,7 @@ def process_sys_fw_ffs_creation(
         #
         # Generate FFS file of each input binary
         #
-        if not generate_sys_fw_ffs_list(
-            ls_ffs, s_gen_ffs, ls_paths, g_dynamic_var, tools_dir
-        ):
+        if not generate_sys_fw_ffs_list(ls_ffs, ls_paths, g_dynamic_var):
             print("ERROR: Error Generating FFS files.")
             return False
         elif print_logs >= 2:
@@ -572,9 +462,7 @@ def process_sys_fw_ffs_creation(
     return True
 
 
-def generate_sys_fw_ffs_list(
-    ls_ffs, s_gen_ffs, ls_paths, g_dynamic_var, tools_dir=None
-):
+def generate_sys_fw_ffs_list(ls_ffs, ls_paths, g_dynamic_var):
 
     try:
         for raw_fwentry in g_dynamic_var.XmlRawFwEntryList:
@@ -608,14 +496,14 @@ def generate_sys_fw_ffs_list(
 
             print(f"INFO: Creating ffs file for {raw_fwentry.InputBinary}.")
 
-            if tools_dir is None:
-                tools_dir = _resolve_tools_dir("GenFfs")
-            raw_fwentry_FileGuid_uuid_bytes_obj = bytes(raw_fwentry.FileGuid)
             raw_fwentry_FileGuid_uuid_str = str(
-                uuid.UUID(bytes=raw_fwentry_FileGuid_uuid_bytes_obj)
+                uuid.UUID(bytes=bytes(raw_fwentry.FileGuid))
             )
-            s_command = f"{_tool_path(tools_dir, 'GenFfs')} -o {s_file_name}.ffs -t EFI_FV_FILETYPE_RAW -g {raw_fwentry_FileGuid_uuid_str} -s -v -i {os.path.join(s_dir_path, raw_fwentry.InputBinary)}"
-            execute_command_linux(s_command)
+            fv_builder.write_raw_ffs(
+                s_file_name + ".ffs",
+                raw_fwentry_FileGuid_uuid_str,
+                os.path.join(s_dir_path, raw_fwentry.InputBinary),
+            )
 
             ls_ffs.append(s_file_name + ".ffs")
 
@@ -623,10 +511,7 @@ def generate_sys_fw_ffs_list(
         s_guid = FVC_h.GlobalStaticVariable.FILE_GUID_METADATA_GUID.strip("{}")
 
         print(f"INFO: Creating ffs file for {SYS_FW_METADATA_FILE}.")
-        if tools_dir is None:
-            tools_dir = _resolve_tools_dir("GenFfs")
-        s_command = f"{_tool_path(tools_dir, 'GenFfs')} -o {s_file_name}.ffs -t EFI_FV_FILETYPE_RAW -g {s_guid} -s -v -i {SYS_FW_METADATA_FILE}"
-        execute_command_linux(s_command)
+        fv_builder.write_raw_ffs(s_file_name + ".ffs", s_guid, SYS_FW_METADATA_FILE)
 
         ls_ffs.append(s_file_name + ".ffs")
 
@@ -700,16 +585,13 @@ def The_Main(args):
     ls_paths = []
     g_dynamic_var = FVC_h.GlobalDynamicVariable()
     fw_ver_binary_data = FVC_h.QSYS_FW_VERSION_DATA()
-    s_gen_ffs = "GenFfs.exe"
-    s_gen_fv = "GenFv.exe"
-    tools_dir = None
 
-    # Extract --edk2-path if provided; derive tools_dir from it
+    # FFS/FV generation is native Python now; strip the obsolete flag so
+    # old invocations do not misparse it as a binary search path.
     args = list(args)
     for i, arg in enumerate(args):
         if arg in ("--edk2-path", "-edk2path") and i + 1 < len(args):
-            edk2_path = args[i + 1]
-            tools_dir = os.path.join(edk2_path, "BaseTools", "Source", "C", "bin")
+            print("WARNING: --edk2-path is deprecated and ignored.")
             del args[i : i + 2]
             break
 
@@ -743,26 +625,24 @@ def The_Main(args):
         r = process_sys_fw_ffs_creation(
             s_xml_file_name=s_xml_file_name,
             s_fw_ver_binary_file=s_fw_ver_binary_file,
-            s_gen_ffs=s_gen_ffs,
             s_breaking_change_number=s_breaking_change_number,
             fw_ver_binary_data=fw_ver_binary_data,
             ls_ffs=ls_ffs,
             ls_paths=ls_paths,
             g_dynamic_var=g_dynamic_var,
-            tools_dir=tools_dir,
         )
         if not r:
             print("process_sys_fw_ffs_creation failed")
 
-    if not generate_fv(s_output_file_name, ls_ffs, s_gen_fv, tools_dir):
+    if not generate_fv(s_output_file_name, ls_ffs):
         print("GenerateFV failed.\n")
         return
     else:
         print("FV created successfully")
 
-    for file in os.listdir("."):
-        if file.endswith((".ffs", ".inf", ".fv.txt", ".fv.map", ".dat")):
-            os.remove(file)
+    # Remove only the intermediates this run created, never other
+    # files that happen to share an extension with them.
+    remove_files(ls_ffs + [SYS_FW_METADATA_FILE])
 
 
 def main():

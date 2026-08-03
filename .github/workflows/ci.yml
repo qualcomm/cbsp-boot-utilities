@@ -27,6 +27,9 @@ jobs:
       - name: make lint
         run: make lint
 
+      - name: make unittest
+        run: make unittest
+
   # ---- End-to-end capsule generation per chip ------------------------
   test:
     runs-on: ${{ matrix.os }}
@@ -53,7 +56,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y uuid-dev device-tree-compiler build-essential
+          sudo apt-get install -y device-tree-compiler build-essential
         shell: bash
 
       - name: Install system dependencies (macOS)
@@ -86,20 +89,16 @@ jobs:
           path: uefi_capsule_generation/build/cache
           key: bootbins-${{ matrix.target }}-${{ matrix.os }}-${{ hashFiles('uefi_capsule_generation/Makefile') }}
 
-      - name: make setup + test (Linux/macOS)
+      - name: make test (Linux/macOS)
         if: runner.os != 'Windows'
-        run: |
-          make setup
-          make test TARGET=${{ matrix.target }}
+        run: make test TARGET=${{ matrix.target }}
         shell: bash
 
-      - name: make setup + test (Windows/MSYS2)
+      - name: make test (Windows/MSYS2)
         if: runner.os == 'Windows'
         # ruff/mypy don't have MSYS2 Python 3.14 wheels and maturin
         # can't build them from source there, so skip the dev group.
-        run: |
-          make setup POETRY_INSTALL_OPTS=--without=dev
-          make test TARGET=${{ matrix.target }} POETRY_INSTALL_OPTS=--without=dev
+        run: make test TARGET=${{ matrix.target }} POETRY_INSTALL_OPTS=--without=dev
         shell: msys2 {0}
 
       - name: Upload generated capsule
