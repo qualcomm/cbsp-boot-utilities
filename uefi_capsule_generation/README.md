@@ -236,7 +236,7 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `-T <Target>`: Target platform, `QCS6490`, `QCS9100`, `QCS8300`,
      `QCS615`, `QRB2210` (Agatti, EMMC), `CQ2390M` (Shikra, EMMC),
      `IQ-X7181` (Hamoa, NORUFS/NORNVME), `IQ-X5121` (Purwa, NORUFS/NORNVME),
-     `Kaanapali` (UFS), or `SM8750` (Pakala, UFS).
+     `Kaanapali` (UFS), `SM8750` (Pakala, UFS), or `Glymur` (NORNVME).
    - `-F <partition.conf>`: Path to a local `partition.conf` file.
    - `--ptool-path <dir>`: Path to an existing `qcom-ptool` checkout.
      When provided, the repository is not cloned from GitHub.
@@ -267,6 +267,7 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `--edk2-path <dir>`: Path to an existing edk2 directory with built
      `GenFfs`/`GenFv` tools. When provided, `setup` does not need to be
      run. Binaries are resolved from `<dir>/BaseTools/Source/C/bin/`.
+   - `--glymur`: Provide this argument for only glymur target.
 
 1. **Update JSON Parameters:**
 
@@ -303,6 +304,7 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - IQ-X5121 ESRT GUID: `185A798B-13B2-4595-BD08-E2770A4BB190`
    - Kaanapali ESRT GUID: `2153308F-BE7C-404A-8605-1FF25E8703B9`
    - SM8750 ESRT GUID: `3409BE01-F1F6-40C2-9336-192FD96606F4`
+   - Glymur ESRT GUID: `6BA73695-DFDA-44E9-8699-36E1AE77E021`
    
 
 
@@ -324,12 +326,12 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
 
    `GenerateCapsule.py` is provided by edk2 upstream and is not part of
    `qcom-capsule-tool`. After `qcom-capsule-tool setup`, it lives at
-   `build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py`.
+   current directory.
 
    To dump info from the Capsule headers:
 
    ```sh
-   python3 build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py \
+   python3 GenerateCapsule.py \
      --dump-info capsule.cap
    ```
 
@@ -357,7 +359,8 @@ qcom-capsule-tool create \
  - `-S <StorageType>`: Storage type, `EMMC`, `UFS`, `NORUFS`, or `NORNVME`.
  - `-T <Target>`: Target platform, `QCS6490`, `QCS9100`, `QCS8300`,
    `QCS615`, `QRB2210`, `CQ2390M`, `IQ-X7181`, `IQ-X5121`, `Kaanapali`,
-   or `SM8750`.
+   `SM8750`, or `Glymur`.
+ - `--glymur`: Provide this argument for only glymur target.
 
 The **-setup** parameter is optional and can be used for the initial setup.
 You can omit it in subsequent runs.

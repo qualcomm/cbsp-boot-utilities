@@ -25,6 +25,7 @@ SUPPORTED_PLATFORMS = {
     "IQ-X5121": "iq-x7181-evk",
     "Kaanapali": "kaanapali-mtp",
     "SM8750": "sm8750-mtp",
+    "Glymur": "glymur-crd",
 }
 
 
@@ -85,14 +86,22 @@ def parse_partition_info(args, lines, storage_type):
         lun = gd.get("lun")
         name = gd["name"]
         guid = gd["guid"]
-        filename = gd.get("filename") or f"{name}.img"
+        filename = gd.get("filename")
+        if not filename:
+            # No --filename means this partition has no firmware image to
+            # update (e.g. TZAPPS, APDP, dtb_a/dtb_b) — skip it rather than
+            # fabricating a "<name>.img" that doesn't exist.
+            continue
 
         # Only UFS partition lines carry a LUN; eMMC and SPINOR never do.
         want_lun = storage_type == "UFS"
 
         if want_lun:
-            # For UFS we only accept LUN 1 or 4
-            if lun not in ["1", "4"]:
+            # For UFS we accept LUN 1, 2, or 4. LUN2 is included because
+            # some targets place the _b backup partition on a different
+            # LUN than its _a primary (e.g. _a on LUN1, _b on LUN2); targets
+            # that keep both _a/_b on the same LUN are unaffected.
+            if lun not in ["1", "2", "4"]:
                 continue
             entry = {"lun": lun, "guid": guid, "filename": filename}
         else:
@@ -100,6 +109,21 @@ def parse_partition_info(args, lines, storage_type):
             if lun is not None:
                 continue
             entry = {"guid": guid, "filename": filename}
+
+        if want_lun and name in partition_info:
+            # Some conf files list the same partition name under more than
+            # one LUN section - not just _a/_b names, since a file can mix
+            # naming conventions (e.g. _a/_b for some partitions, <name>/
+            # <name>_BACKUP for others). LUN1 always wins; if a name has no
+            # LUN1 entry, fall back to whichever other LUN carries it (e.g.
+            # LUN2). Once a LUN1 entry is recorded, later duplicates never
+            # replace it; a LUN1 entry seen later always takes over an
+            # earlier non-LUN1 fallback.
+            existing_lun = partition_info[name]["lun"]
+            if existing_lun == "1":
+                continue
+            if lun != "1":
+                continue
 
         partition_info[name] = entry
     return partition_info
@@ -151,11 +175,16 @@ def create_xml(args, pairs, partition_info):
         part_b = partition_info[backup_name]
 
         if args.StorageType == "UFS":
-            disk_type = f"UFS_LUN{part_a['lun']}"
+            # Use each partition's own LUN so that targets where _a/_b span
+            # different LUNs get the correct DiskType on both Dest and
+            # Backup. When _a/_b share a LUN (today's only case) this is
+            # identical to using a single disk_type for both.
+            dest_disk_type = f"UFS_LUN{part_a['lun']}"
+            backup_disk_type = f"UFS_LUN{part_b['lun']}"
         elif args.StorageType in ("SPINOR", "NORUFS", "NORNVME"):
-            disk_type = "SPINOR"
+            dest_disk_type = backup_disk_type = "SPINOR"
         else:
-            disk_type = "EMMC_PARTITION_USER_DATA"
+            dest_disk_type = backup_disk_type = "EMMC_PARTITION_USER_DATA"
 
         fw_entry = doc.createElement("FwEntry")
         for tag, text in [
@@ -171,7 +200,7 @@ def create_xml(args, pairs, partition_info):
 
         dest = doc.createElement("Dest")
         for tag, text in [
-            ("DiskType", disk_type),
+            ("DiskType", dest_disk_type),
             ("PartitionName", primary_name),
             ("PartitionTypeGUID", part_a["guid"]),
         ]:
@@ -182,7 +211,7 @@ def create_xml(args, pairs, partition_info):
 
         backup = doc.createElement("Backup")
         for tag, text in [
-            ("DiskType", disk_type),
+            ("DiskType", backup_disk_type),
             ("PartitionName", backup_name),
             ("PartitionTypeGUID", part_b["guid"]),
         ]:

@@ -6,6 +6,7 @@
 import argparse
 import os
 import subprocess
+import sys
 
 
 def run_command(command, fail_on_error=False):
@@ -23,26 +24,31 @@ def run_command(command, fail_on_error=False):
 
 def _run(args):
 
+    python = sys.executable
+
     if args.setup:
-        run_command("python3 capsule_setup.py", fail_on_error=True)
+        run_command(f"{python} -m qcom_capsule_tool.capsule_setup", fail_on_error=True)
     # Step 1: Generate SYSFW_VERSION.bin
     run_command(
-        f"python3 SYSFW_VERSION_program.py -Gen -FwVer {args.fwver} -LFwVer {args.lfwver} -O SYSFW_VERSION.bin"
+        f"{python} -m qcom_capsule_tool.SYSFW_VERSION_program -Gen -FwVer {args.fwver} -LFwVer {args.lfwver} -O SYSFW_VERSION.bin"
     )
 
     # Step 2: Create FvUpdate.xml
     ptool_path_arg = f"--ptool-path {args.ptool_path}" if args.ptool_path else ""
-    run_command(f"python3 UpdateFvXml.py -S {args.S} -T {args.t} {ptool_path_arg}")
+    run_command(
+        f"{python} -m qcom_capsule_tool.UpdateFvXml -S {args.StorageType} -T {args.target} {ptool_path_arg}"
+    )
 
     # Step 3: Create firmware volume
     edk2_path_arg = f"--edk2-path {args.edk2_path}" if args.edk2_path else ""
+    glymur_arg = "--glymur" if args.target.lower() == "glymur" else ""
     run_command(
-        f'python3 FVCreation.py firmware.fv "-FvType" "SYS_FW" "FvUpdate.xml" SYSFW_VERSION.bin {args.images} {edk2_path_arg}'
+        f'{python} -m qcom_capsule_tool.FVCreation firmware.fv "-FvType" "SYS_FW" "FvUpdate.xml" SYSFW_VERSION.bin {args.images} {edk2_path_arg} {glymur_arg}'
     )
 
     # Step 4: Update JSON parameters
     run_command(
-        f"python3 UpdateJsonParameters.py -j {args.config} -f SYS_FW -b SYSFW_VERSION.bin -pf firmware.fv -p {args.p} -x {args.x} -oc {args.oc} -g {args.guid}"
+        f"{python} -m qcom_capsule_tool.UpdateJsonParameters -j {args.config} -f SYS_FW -b SYSFW_VERSION.bin -pf firmware.fv -p {args.p} -x {args.x} -oc {args.oc} -g {args.guid}"
     )
 
     # Step 5: Generate capsule. Resolve edk2 path explicitly so we never depend

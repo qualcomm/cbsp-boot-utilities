@@ -148,7 +148,70 @@ def fw_entry_fields_value_checking(raw_fwentry, meta_data_fwentry, g_dynamic_var
                     f"Error: More than {FVC_h.GlobalStaticVariable.MATCH_IDENTIFIER_NAME_MAX_SIZE} characters found in <MatchIdentifier>"
                 )
                 return False
-            meta_data_fwentry.MatchIdentifier = raw_fwentry.MatchIdentifier
+            meta_data_fwentry.MatchIdentifier = raw_fwentry.MatchIdentifier.encode(
+                "utf-8"
+            )
+
+    # BinaryType
+    if g_dynamic_var.isGlymurMode and raw_fwentry.BinaryType:
+        if raw_fwentry.BinaryType.upper() in g_dynamic_var.dBinaryTypeByString:
+            meta_data_fwentry.BinaryType = g_dynamic_var.dBinaryTypeByString[
+                raw_fwentry.BinaryType.upper()
+            ]
+        else:
+            print(f"<BinaryType> {raw_fwentry.BinaryType} is not recognized")
+            return False
+
+    # ARValidation
+    if g_dynamic_var.isGlymurMode and raw_fwentry.ARValidation:
+        images = raw_fwentry.ARValidation.Images
+        image_count = len(images)
+        for j, image in enumerate(images):
+            if meta_data_fwentry.BinaryType == FVC_h.FWENTRY_BINARY_TYPE.FATFS:
+                if image.FileName is None:
+                    print(
+                        f"ERROR: FileName is null for image {raw_fwentry.InputBinary}"
+                    )
+                    return False
+                if len(image.FileName) > FVC_h.GlobalStaticVariable.FILE_NAME_MAX_SIZE:
+                    print(
+                        f"ERROR: More than {FVC_h.GlobalStaticVariable.FILE_NAME_MAX_SIZE} characters found in <FileName>"
+                    )
+                    return False
+            elif meta_data_fwentry.BinaryType == FVC_h.FWENTRY_BINARY_TYPE.RAW:
+                if (
+                    image.FileName is not None
+                    and len(image.FileName)
+                    < FVC_h.GlobalStaticVariable.FILE_NAME_MAX_SIZE
+                ):
+                    if image.FileName != raw_fwentry.InputBinary:
+                        print(
+                            "ARValidation FileName should be same as InputBinary name for RAW FwEntry"
+                        )
+                        return False
+
+            if not image.ARValidationType:
+                print(f"ERROR: ARValidationType is null for image {image.FileName}")
+                return False
+
+            if (
+                len(image.ARValidationType)
+                > FVC_h.GlobalStaticVariable.AR_VALIDATION_TYPE_MAX_SIZE
+            ):
+                print(
+                    f"ERROR: More than {FVC_h.GlobalStaticVariable.AR_VALIDATION_TYPE_MAX_SIZE} characters found in <ARValidationType>"
+                )
+                return False
+
+            if image.FileName is not None:
+                meta_data_fwentry.ARValidation.Images[j].FileName[
+                    : len(image.FileName.encode("utf-16-le"))
+                ] = image.FileName.encode("utf-16-le")
+            meta_data_fwentry.ARValidation.Images[j].ARValidationType[
+                : len(image.ARValidationType.encode("utf-16-le"))
+            ] = image.ARValidationType.encode("utf-16-le")
+
+        meta_data_fwentry.ARValidation.ImageCount = image_count
 
     # Dest DiskType
     if raw_fwentry.UpdatePath.DiskType:
@@ -472,9 +535,9 @@ def fw_entry_list_validation_main(g_dynamic_var):
         m_fw_entry.UpdatePath = FVC_h.FWENTRY_DEVICE_PATH(0x0)
         m_fw_entry.BackupPath = FVC_h.FWENTRY_DEVICE_PATH(0x0)
         if g_dynamic_var.isMatchIdentifierInXML:
-            m_fw_entry.MatchIdentifier = [
-                "\0"
-            ] * FVC_h.GlobalStaticVariable.MATCH_IDENTIFIER_NAME_MAX_SIZE
+            m_fw_entry.MatchIdentifier = (
+                b"\0" * FVC_h.GlobalStaticVariable.MATCH_IDENTIFIER_NAME_MAX_SIZE
+            )
 
         if fw_entry_validation(raw_fw_entry_temp, m_fw_entry, g_dynamic_var):
             if m_fw_entry.Operation != FVC_h.FWENTRY_OPERATION_TYPE.IGNORE:

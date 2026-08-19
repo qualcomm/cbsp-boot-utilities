@@ -68,11 +68,19 @@ class FlashType(IntEnum):
     NORUFS = 0x00000003
 
 
+class FWENTRY_BINARY_TYPE(IntEnum):
+    RAW = 0x00000000  # For FwEntries which is RAW binary like XBL_SC
+    FATFS = 0x00000001  # For FwEntries which is Fat File System binary like PLAT
+    MAX = 0x00000003
+
+
 class GlobalStaticVariable:
     PARTITION_NAME_MAX_SIZE = 36
     FILE_NAME_MAX_SIZE = 255
     DPP_NAME_MAX_SIZE = 255
     MATCH_IDENTIFIER_NAME_MAX_SIZE = 36
+    AR_VALIDATION_TYPE_MAX_SIZE = 36
+    MAX_IMAGE_COUNT = 2
 
     FILE_GUID_SBL1 = "{0A85A45E-915F-49DB-8BD5-5337861F8082}"
     FILE_GUID_SBL2 = "{E7BF4F3F-7DC9-40C0-9DF2-CE2EC5CEACEF}"
@@ -178,6 +186,42 @@ class XML_RAW_FWENTRY_DEVICE_PATH(ctypes.Structure):
     ]
 
 
+class FWENTRY_IMAGE(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("FileName", ctypes.c_byte * (2 * GlobalStaticVariable.FILE_NAME_MAX_SIZE)),
+        (
+            "ARValidationType",
+            ctypes.c_byte * (2 * GlobalStaticVariable.AR_VALIDATION_TYPE_MAX_SIZE),
+        ),
+    ]
+
+    def to_bytes(self):
+        return bytes(self)
+
+
+class FWENTRY_ARVALIDATION(ctypes.Structure):
+    _pack_ = 1
+    _fields_ = [
+        ("Images", FWENTRY_IMAGE * GlobalStaticVariable.MAX_IMAGE_COUNT),
+        ("ImageCount", ctypes.c_int32),
+    ]
+
+    def to_bytes(self):
+        return bytes(self)
+
+
+class XML_RAW_FWENTRY_IMAGE:
+    def __init__(self, file_name=None, ar_validation_type=None):
+        self.FileName = file_name
+        self.ARValidationType = ar_validation_type
+
+
+class XML_RAW_FWENTRY_ARVALIDATION:
+    def __init__(self, images=None):
+        self.Images = images  # list of XML_RAW_FWENTRY_IMAGE
+
+
 class QPAYLOAD_METADATA_FWENTRY(ctypes.Structure):
     _pack_ = 1
     _fields_ = [
@@ -192,10 +236,59 @@ class QPAYLOAD_METADATA_FWENTRY(ctypes.Structure):
             "MatchIdentifier",
             ctypes.c_char * (2 * GlobalStaticVariable.MATCH_IDENTIFIER_NAME_MAX_SIZE),
         ),
+        ("BinaryType", ctypes.c_uint32),
+        ("ARValidation", FWENTRY_ARVALIDATION),
     ]
 
     def to_bytes(self):
         return bytes(self)
+
+
+class QPAYLOAD_METADATA_FWENTRY_GLYMUR(ctypes.Structure):
+    """Glymur (payload header V5) on-disk layout. Real Glymur/Mavros/Honu/
+    Kaanapali firmware places Revision as the FIRST field of FWENTRY_METADATA,
+    unlike the legacy layout above where Revision sits after BackupPath.
+    Field set/sizes are otherwise identical to QPAYLOAD_METADATA_FWENTRY."""
+
+    _pack_ = 1
+    _fields_ = [
+        ("Revision", ctypes.c_uint32),
+        ("FileGuid", ctypes.c_byte * 16),
+        ("Operation", ctypes.c_uint32),
+        ("UpdateType", ctypes.c_uint32),
+        ("BackupType", ctypes.c_uint32),
+        ("UpdatePath", FWENTRY_DEVICE_PATH),
+        ("BackupPath", FWENTRY_DEVICE_PATH),
+        (
+            "MatchIdentifier",
+            ctypes.c_char * (2 * GlobalStaticVariable.MATCH_IDENTIFIER_NAME_MAX_SIZE),
+        ),
+        ("BinaryType", ctypes.c_uint32),
+        ("ARValidation", FWENTRY_ARVALIDATION),
+    ]
+
+    def to_bytes(self):
+        return bytes(self)
+
+    @classmethod
+    def from_legacy(cls, fw_entry):
+        """Build a Glymur-ordered entry from a populated QPAYLOAD_METADATA_FWENTRY."""
+        glymur_entry = cls()
+        glymur_entry.Revision = fw_entry.Revision
+        glymur_entry.FileGuid = fw_entry.FileGuid
+        glymur_entry.Operation = fw_entry.Operation
+        glymur_entry.UpdateType = fw_entry.UpdateType
+        glymur_entry.BackupType = fw_entry.BackupType
+        glymur_entry.UpdatePath.copy_from(fw_entry.UpdatePath)
+        glymur_entry.BackupPath.copy_from(fw_entry.BackupPath)
+        glymur_entry.MatchIdentifier = fw_entry.MatchIdentifier
+        glymur_entry.BinaryType = fw_entry.BinaryType
+        ctypes.memmove(
+            ctypes.byref(glymur_entry.ARValidation),
+            ctypes.byref(fw_entry.ARValidation),
+            ctypes.sizeof(FWENTRY_ARVALIDATION),
+        )
+        return glymur_entry
 
 
 class XML_RAW_FWENTRY(ctypes.Structure):
@@ -210,6 +303,12 @@ class XML_RAW_FWENTRY(ctypes.Structure):
         ("BackupPath", XML_RAW_FWENTRY_DEVICE_PATH),
         ("MatchIdentifier", ctypes.c_wchar_p),
     ]
+
+    # BinaryType/ARValidation are not part of the marshaled XML_RAW_FWENTRY
+    # layout (they are only ever mapped into QPAYLOAD_METADATA_FWENTRY's
+    # ctypes-typed fields), so they are kept as plain, un-marshaled defaults.
+    BinaryType = None
+    ARValidation = None
 
 
 class QPAYLOAD_METADATA_HEADER(ctypes.Structure):
@@ -397,7 +496,19 @@ class GlobalDynamicVariable:
         FWENTRY_BACKUP_TYPE.FAT_FILE: "BACKUP_FAT_FILE",
     }
 
+    dBinaryTypeByString = {
+        "RAW": FWENTRY_BINARY_TYPE.RAW,
+        "FATFS": FWENTRY_BINARY_TYPE.FATFS,
+    }
+
+    dBinaryTypeByValue = {
+        FWENTRY_BINARY_TYPE.RAW: "RAW",
+        FWENTRY_BINARY_TYPE.FATFS: "FATFS",
+    }
+
     XmlRawFwEntryList: deque = deque()
     QpayloadFwEntryList: deque = deque()
     DeviceFlashType = None
     isMatchIdentifierInXML = False
+    isBinaryTypeInXML = False
+    isGlymurMode = False

@@ -29,20 +29,16 @@ def _is_http_url(url):
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
-edk2_branch = "edk2-stable202008"
+edk2_branch = "master"
 edk2_git_repo_sync_url = "https://github.com/tianocore/edk2.git"
-# BaseTools is built from source with -Werror, so an unpinned master
-# clone breaks whenever a new edk2/toolchain combination introduces a
-# warning. Pin to a stable release.
-edk2_pin_tag = "edk2-stable202605"
+edk2_pin_tag = "master"
 generate_capsule_py_sync_url = (
     "https://raw.githubusercontent.com/tianocore"
-    "/edk2/ef91b07388e1c0a50c604e5350eeda98428ccea6/BaseTools/Source/Python"
+    "/edk2/master/BaseTools/Source/Python"
     "/Capsule/GenerateCapsule.py"
 )
 basetools_common_sync_url = (
-    "https://github.com/tianocore/edk2/tree/"
-    "edk2-stable202008/BaseTools/Source/Python/Common"
+    "https://github.com/tianocore/edk2/tree/master/BaseTools/Source/Python/Common"
 )
 BROTLI_SUBMODULE_PATH = "BaseTools/Source/C/BrotliCompress/brotli"
 

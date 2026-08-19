@@ -34,6 +34,7 @@ SYS_FW_METADATA_FILE = "Metadata.dat"
 SYS_FW_VERSION_DATA_SIGNATURE = "SYSFWVER"
 SYS_FW_VERSION_DATA_REVISION = "1.0"
 SYS_FW_METADATA_HEADER_REVISION = 0x4
+SYS_FW_METADATA_HEADER_REVISION_GLYMUR = 0x5
 SYS_FW_METADATA_REVISION = 0x1
 
 
@@ -407,7 +408,13 @@ def generate_sys_fw_meta_data_file(
     meta_data_header.Signature1 = SYS_FW_METADATA_HEADER_SIGNATURE1
     meta_data_header.Signature2 = SYS_FW_METADATA_HEADER_SIGNATURE2
 
-    if g_dynamic_var.isMatchIdentifierInXML:
+    if g_dynamic_var.isGlymurMode:
+        # Use Glymur Payload header format whenever --glymur is passed,
+        # regardless of whether any FwEntry declares <BinaryType>.
+        meta_data_header.Revision = SYS_FW_METADATA_HEADER_REVISION_GLYMUR
+        fw_entry_meta_data_size = ctypes.sizeof(FVC_h.QPAYLOAD_METADATA_FWENTRY_GLYMUR)
+
+    elif g_dynamic_var.isMatchIdentifierInXML:
         # Use V4 Payload header format if MatchIdentifier in XML.
         meta_data_header.Revision = SYS_FW_METADATA_HEADER_REVISION
         fw_entry_meta_data_size = sys.getsizeof(FVC_h.QPAYLOAD_METADATA_FWENTRY)
@@ -422,6 +429,8 @@ def generate_sys_fw_meta_data_file(
                 ctypes.c_char
                 * (2 * FVC_h.GlobalStaticVariable.MATCH_IDENTIFIER_NAME_MAX_SIZE)
             )
+            - ctypes.sizeof(ctypes.c_uint32)
+            - ctypes.sizeof(FVC_h.FWENTRY_ARVALIDATION)
         )
 
     meta_data_header_temp = FVC_h.QPAYLOAD_METADATA_HEADER()
@@ -480,7 +489,16 @@ def generate_sys_fw_meta_data_file(
             )
             fw_entry.BackupPath.PartitionTypeGUID = (ctypes.c_byte * 16)(*new_uuid_obj)
 
-            bytes_data = fw_entry.to_bytes()
+            if g_dynamic_var.isGlymurMode:
+                # Real Glymur/Mavros/Honu/Kaanapali V5 firmware expects Revision
+                # as the FIRST field of FWENTRY_METADATA, unlike the legacy
+                # layout QpayloadFwEntryList entries are built in.
+                glymur_entry = FVC_h.QPAYLOAD_METADATA_FWENTRY_GLYMUR.from_legacy(
+                    fw_entry
+                )
+                bytes_data = glymur_entry.to_bytes()
+            else:
+                bytes_data = fw_entry.to_bytes()
             fs.write(bytes_data[:fw_entry_meta_data_size])
 
     return True
@@ -644,6 +662,45 @@ def generate_sys_fw_ffs_list(
     return True
 
 
+def generate_ffs_for_ec_fw(ls_ffs, s_gen_ffs, s_ec_fw_file_name, tools_dir=None):
+    s_file_name = "EC_FW"
+    s_guid = FVC_h.GlobalStaticVariable.EC_FW_FFS_FILE_GUID.strip("{}")
+
+    try:
+        print(f"INFO: Creating FFS file for {s_ec_fw_file_name}.")
+
+        if tools_dir is None:
+            tools_dir = _resolve_tools_dir("GenFfs")
+        s_command = f"{_tool_path(tools_dir, 'GenFfs')} -o {s_file_name}.ffs -t EFI_FV_FILETYPE_RAW -g {s_guid} -s -v -i {s_ec_fw_file_name}"
+        execute_command_linux(s_command)
+
+        ls_ffs.append(s_file_name + ".ffs")
+
+        #
+        # Check if all ffs files are present and can be located
+        #
+        for s_file in ls_ffs:
+            if not os.path.exists(s_file):
+                print(f"ERROR: Failure locating {s_file} file to create FV.")
+                return False
+
+    except Exception:
+        print(traceback.format_exc())
+
+    return True
+
+
+def process_ec_fw_ffs_creation(s_ec_fw_file_name, s_gen_ffs, ls_ffs, tools_dir=None):
+    try:
+        if not generate_ffs_for_ec_fw(ls_ffs, s_gen_ffs, s_ec_fw_file_name, tools_dir):
+            print("Generating FFS file for EC FW failed.\n")
+            return False
+    except Exception:
+        print(traceback.format_exc())
+
+    return True
+
+
 def print_help():
     print("<======== FvCreator.py Usage ======>\n")
     print(
@@ -713,11 +770,19 @@ def The_Main(args):
             del args[i : i + 2]
             break
 
+    # Extract --glymur if provided; enables Glymur BinaryType/ARValidation XML support
+    for i, arg in enumerate(args):
+        if arg == "--glymur":
+            g_dynamic_var.isGlymurMode = True
+            del args[i]
+            break
+
     # fv_type = FV_TYPE.UNKNOWN
 
     # Skipping the re-creation of all executables
     if len(args) == 1 and args[0].lower() == "-v":
         print("Version: %s" % (TOOL_VERSION_STRING))
+        return
 
     s_output_file_name = args[0]
 
@@ -738,7 +803,17 @@ def The_Main(args):
         s_fw_ver_binary_file = args[4]
 
         for i in range(5, len(args)):
-            ls_paths.append(args[i])
+            temp_search_path = args[i].strip().strip('"')
+
+            # To fix root directory entry. For example: If user passed just "C:" normalize to "C:\"
+            if (
+                len(temp_search_path) == 2
+                and temp_search_path[1] == ":"
+                and temp_search_path[0].isalpha()
+            ):
+                temp_search_path += "\\"
+
+            ls_paths.append(temp_search_path)
 
         r = process_sys_fw_ffs_creation(
             s_xml_file_name=s_xml_file_name,
@@ -753,6 +828,18 @@ def The_Main(args):
         )
         if not r:
             print("process_sys_fw_ffs_creation failed")
+
+    elif fv_type.lower() == "EC_FW".lower():
+        s_ec_fw_file_name = args[3]
+
+        r = process_ec_fw_ffs_creation(
+            s_ec_fw_file_name=s_ec_fw_file_name,
+            s_gen_ffs=s_gen_ffs,
+            ls_ffs=ls_ffs,
+            tools_dir=tools_dir,
+        )
+        if not r:
+            print("process_ec_fw_ffs_creation failed")
 
     if not generate_fv(s_output_file_name, ls_ffs, s_gen_fv, tools_dir):
         print("GenerateFV failed.\n")

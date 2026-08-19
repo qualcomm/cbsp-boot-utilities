@@ -131,6 +131,32 @@ def parse_input_xml(s_xml_file, s_breaking_change_number, g_dynamic_var):
             "PartitionTypeGUID"
         ]
 
+        if g_dynamic_var.isGlymurMode:
+            if "MatchIdentifier" in fw_entry:
+                raw_fw_item.MatchIdentifier = fw_entry["MatchIdentifier"]
+                g_dynamic_var.isMatchIdentifierInXML = True
+
+            if "BinaryType" in fw_entry:
+                raw_fw_item.BinaryType = fw_entry["BinaryType"]
+                g_dynamic_var.isBinaryTypeInXML = True
+
+            if "ARValidation" in fw_entry:
+                ar_validation = fw_entry["ARValidation"]
+                image_nodes = ar_validation.get("Image") if ar_validation else None
+                if image_nodes:
+                    if isinstance(image_nodes, OrderedDict):
+                        image_nodes = [image_nodes]
+                    images = []
+                    for image_node in image_nodes:
+                        image = FVC_h.XML_RAW_FWENTRY_IMAGE(
+                            file_name=image_node.get("FileName"),
+                            ar_validation_type=image_node.get("ARValidationType"),
+                        )
+                        images.append(image)
+                    raw_fw_item.ARValidation = FVC_h.XML_RAW_FWENTRY_ARVALIDATION(
+                        images
+                    )
+
         g_dynamic_var.XmlRawFwEntryList.append(raw_fw_item)
 
     # print("\n\n\n*******************\n")
