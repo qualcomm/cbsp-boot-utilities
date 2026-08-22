@@ -76,6 +76,13 @@ def _cmd_patch_capsule_cert(argv):
     main()
 
 
+def _cmd_gen_test_certs(argv):
+    sys.argv = ["qcom-capsule-tool gen-test-certs"] + argv
+    from qcom_capsule_tool.gen_test_certs import main
+
+    main()
+
+
 SUBCOMMANDS = {
     "create": ("Run the full capsule generation pipeline", _cmd_create),
     "fv-create": ("Create a firmware volume from XML + binaries", _cmd_fv_create),
@@ -93,6 +100,10 @@ SUBCOMMANDS = {
     "patch-capsule-cert": (
         "Patch QcCapsuleRootCert in a uefi_dtbs or xbl_config ELF (auto-detected)",
         _cmd_patch_capsule_cert,
+    ),
+    "gen-test-certs": (
+        "Generate a throwaway OEM Root/Sub/Leaf cert chain for testing",
+        _cmd_gen_test_certs,
     ),
 }
 
