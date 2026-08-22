@@ -54,7 +54,7 @@ def _openssl(args, cwd):
     subprocess.run(["openssl"] + args, cwd=cwd, check=True)
 
 
-def generate_test_cert_chain(output_dir, password=DEFAULT_PASSWORD, openssl_cfg=None):
+def generate_test_cert_chain(output_dir, password, openssl_cfg=None):
     """Generate a self-signed OEM Root/Sub/Leaf chain into *output_dir*.
 
     Writes QcFMPRoot.{key,crt,cer,pub.pem}, QcFMPSub.{key,crt,csr,pub.pem},
