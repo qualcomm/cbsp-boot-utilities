@@ -37,7 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        target: [qcs6490, qcs8300, qcs9100]
+        target: [qcs6490, qcs8300, qcs9100, iqx7181, iqx5121]
     steps:
       - uses: actions/checkout@v4
 
