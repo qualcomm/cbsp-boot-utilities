@@ -15,6 +15,15 @@ python = "^3.9"
 pyelftools = "*"
 pylibfdt = "*"
 
+# pylibfdt ships only an sdist (no prebuilt wheels), so its SWIG-generated
+# _libfdt C extension is compiled from source on every install. Its
+# libfdt.i still uses the Python 2 compatibility macro PyInt_AsLong, which
+# SWIG dropped in 4.5.0, breaking the import with
+# "undefined symbol: PyInt_AsLong". Pin the build-time swig dependency
+# below that release until an upstream pylibfdt fix is published.
+[tool.poetry.build-constraints]
+pylibfdt = { swig = "<4.5.0" }
+
 [tool.poetry.group.dev.dependencies]
 ruff = "0.15.16"
 mypy = "1.19.1"
