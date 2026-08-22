@@ -46,14 +46,15 @@ Subcommands wrap the individual tools:
 
 | Subcommand              | Replaces script             |
 | ----------------------- | --------------------------- |
-| `setup`                 | `capsule_setup.py`          |
 | `create`                | `capsule_creator.py`        |
 | `fv-create`             | `FVCreation.py`             |
+| `generate-capsule`      | edk2 `GenerateCapsule.py`   |
 | `update-fv-xml`         | `UpdateFvXml.py`            |
 | `update-json`           | `UpdateJsonParameters.py`   |
 | `sysfw-version-create`  | `SYSFW_VERSION_program.py`  |
 | `bin-to-hex`            | `BinToHex.py`               |
 | `patch-capsule-cert`    | `patch_capsule_cert.py`     |
+| `gen-test-certs`        | `gen_test_certs.py`         |
 
 ### 2.2 Quick start with Make
 
@@ -63,17 +64,18 @@ under the hood):
 ```sh
 make install     # poetry install
 make lint        # ruff check + ruff format --check + mypy
-make setup       # clone + build edk2 into build/edk2
+make unittest    # pytest unit tests (golden FFS/FV/capsule fixtures)
 make test TARGET=qcs6490   # end-to-end capsule generation for a chip
 make test-all              # iterate over every supported chip
 make clean
 ```
 
-Supported `TARGET`s: `qcs6490`, `qcs8300`, `qcs9100`. The
-`test` target downloads chip-specific boot binaries from public URLs,
-generates a throwaway test cert chain, patches `xbl_config.elf` with
-the new root cert, and runs `qcom-capsule-tool` end-to-end. Output
-lands in `build/$(TARGET)/capsule_file.cap`.
+Supported `TARGET`s: `qcs6490`, `qcs8300`, `qcs9100`, `iqx7181`, `iqx5121`.
+The `test` target downloads chip-specific boot binaries from public URLs,
+generates a throwaway test cert chain, patches the target's root-cert
+carrier (`xbl_config.elf` for qcs6490/qcs8300/qcs9100, `uefi_dtbs.xz` for
+iqx7181/iqx5121) with the new root cert, and runs `qcom-capsule-tool`
+end-to-end. Output lands in `build/$(TARGET)/capsule_file.cap`.
 
 ## 3. Working of the Host Signing Tool
 
@@ -92,8 +94,6 @@ lands in `build/$(TARGET)/capsule_file.cap`.
 1. **OpenSSL**: Same as above.
 1. **Python3**: Same as above.
 1. **GIT**: version control system.
-1. **Visual Studio with C++ Development Tools**: An integrated development
-   environment (IDE) from Microsoft, including tools for C++ development.
 
 Before starting the capsule generation process, you need to generate OpenSSL
 certificates as mentioned in
@@ -174,6 +174,29 @@ qcom-capsule-tool patch-capsule-cert \
   xbl_config.elf QcFMPRoot.cer xbl_config_patched.elf
 ```
 
+### 3.3 Generating a Throwaway Test Cert Chain
+
+`gen-test-certs` generates a self-signed OEM Root/Sub/Leaf certificate
+chain for local testing/CI. It is target-agnostic and **must be invoked
+explicitly** — no command in this tool auto-generates certs when they are
+missing, since doing so implicitly in a production flow would be a
+security hazard.
+
+```sh
+qcom-capsule-tool gen-test-certs -o Certificates/
+```
+
+- `-o, --output-dir <dir>`: Directory to write the cert chain into.
+- `--password <pw>`: Password protecting the generated private keys
+  (default: `testpassword`).
+- `--openssl-cfg <path>`: Path to `opensslroot.cfg`; auto-detected from
+  the repo's `.github/` directory if omitted.
+
+Produces `QcFMPRoot.{key,crt,cer,pub.pem}`, `QcFMPSub.{key,crt,csr,pub.pem}`,
+and `QcFMPCert.{key,crt,csr,pfx,pem}` (private-key-bearing files chmod
+`600`). **Not for production use** — the chain is self-signed with a
+well-known default password.
+
 ## 4. Steps to Generate Capsule Files
 
 Clone the repository and enter the
@@ -182,20 +205,6 @@ Clone the repository and enter the
 ```sh
 git clone https://github.com/quic/cbsp-boot-utilities.git
 ```
-
-1. **Setup the Environment:**
-
-   ```sh
-   qcom-capsule-tool setup
-   ```
-
-   This clones edk2 (shallow, brotli submodule only), builds `GenFfs`/
-   `GenFv`, and downloads `GenerateCapsule.py` next to the working
-   directory.
-
-   If you already have a local edk2 build, you can skip this step and
-   pass `--edk2-path <dir>` to `fv-create` / `create` instead (see steps
-   4 and 5).
 
 1. **Generate Firmware Version bin File:**
 
@@ -240,10 +249,15 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `-F <partition.conf>`: Path to a local `partition.conf` file.
    - `--ptool-path <dir>`: Path to an existing `qcom-ptool` checkout.
      When provided, the repository is not cloned from GitHub.
+   - `--update-partitions <name1,name2,...>`: Comma-separated base
+     partition names (e.g. `dtb,uefi_dtb` or `XBL_SC,uefi_dtb`) whose
+     `FwEntry.Operation` should be set to `UPDATE`; every other entry is
+     left at `IGNORE`. Omit the flag to keep the previous behavior (every
+     entry `IGNORE` — you then edit the XML by hand, see below).
 
    Once `FvUpdate.xml` is generated, update the `Operation` field for
-   each firmware entry as needed. By default the operation is set to
-   `IGNORE`.
+   each firmware entry as needed if you didn't use `--update-partitions`.
+   By default the operation is set to `IGNORE`.
 
 1. **Create Firmware Volume (FV):**
 
@@ -264,10 +278,10 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `SYSFW_VERSION.bin`: The firmware version file generated in the
      previous step.
    - `Images/`: Directory containing the images.
-   - `--edk2-path <dir>`: Path to an existing edk2 directory with built
-     `GenFfs`/`GenFv` tools. When provided, `setup` does not need to be
-     run. Binaries are resolved from `<dir>/BaseTools/Source/C/bin/`.
    - `--glymur`: Provide this argument for only glymur target.
+
+   FFS and FV images are generated natively in Python; no edk2
+   checkout or BaseTools binaries are required.
 
 1. **Update JSON Parameters:**
 
@@ -311,7 +325,7 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
 1. **Generate the Capsule File:**
 
    ```sh
-   python3 build/edk2/BaseTools/Source/Python/Capsule/GenerateCapsule.py \
+   qcom-capsule-tool generate-capsule \
      -e -j config.json \
      -o <capsule_name>.cap \
      --capflag PersistAcrossReset \
@@ -324,15 +338,14 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `--capflag PersistAcrossReset`: Flag to persist across reset.
    - `-v`: Verbose mode.
 
-   `GenerateCapsule.py` is provided by edk2 upstream and is not part of
-   `qcom-capsule-tool`. After `qcom-capsule-tool setup`, it lives at
-   current directory.
+   The subcommand is a drop-in replacement for the JSON encode mode of
+   edk2 `GenerateCapsule.py` (OpenSSL signing); no edk2 checkout is
+   required.
 
    To dump info from the Capsule headers:
 
    ```sh
-   python3 GenerateCapsule.py \
-     --dump-info capsule.cap
+   qcom-capsule-tool generate-capsule --dump-info capsule.cap
    ```
 
 ## 5. Alternative: Master Script
@@ -351,42 +364,93 @@ qcom-capsule-tool create \
   -guid <ESRT GUID> \
   -capsule <capsule_name>.cap \
   -images /Images \
-  -setup \
   -S <StorageType> \
-  -T <Target>
+  -T <Target> \
+  --ptool-path /path/to/qcom-ptool
 ```
 
  - `-S <StorageType>`: Storage type, `EMMC`, `UFS`, `NORUFS`, or `NORNVME`.
  - `-T <Target>`: Target platform, `QCS6490`, `QCS9100`, `QCS8300`,
    `QCS615`, `QRB2210`, `CQ2390M`, `IQ-X7181`, `IQ-X5121`, `Kaanapali`,
-   `SM8750`, or `Glymur`.
- - `--glymur`: Provide this argument for only glymur target.
+   `SM8750`, or `Glymur`. Glymur XML support is enabled automatically
+   when `-T Glymur` is used.
+ - `--ptool-path <dir>`: Optional path to an existing `qcom-ptool`
+   checkout. When provided, the repository is not cloned from GitHub.
+ - `--patch-cert <QcFMPRoot.cer>`: Optional. When provided, patches
+   `QcCapsuleRootCert` into whichever of `uefi_dtbs.elf`/`uefi_dtbs.xz`
+   and/or `xbl_config.elf` are found under `-images` before the firmware
+   volume is created. `.xz` inputs are transparently decompressed,
+   patched, and recompressed (pure-Python `lzma`, no `xz` binary
+   required). Patched copies are staged in `./patched_images/` and
+   searched ahead of `-images`, so the original files under `-images`
+   are never modified. Omit this flag if the images are already patched
+   (e.g. via a separate `patch-capsule-cert` step).
+ - `--update-partitions <name1,name2,...>`: Optional. Forwarded verbatim
+   to `update-fv-xml`'s own `--update-partitions` (see step 2 above) when
+   `create` generates `FvUpdate.xml` internally. Omit to keep every entry
+   `IGNORE` (unchanged default behavior).
 
-The **-setup** parameter is optional and can be used for the initial setup.
-You can omit it in subsequent runs.
+### Example: full pipeline for IQ-X7181 (Hamoa)
 
-If you have a local edk2 build and/or a local `qcom-ptool` checkout,
-you can skip the setup step entirely by providing their paths directly:
+IQ-X7181/IQ-X5121 ship their root cert inside `uefi_dtbs.xz` (SPINOR
+layout) rather than `xbl_config.elf`. `--update-partitions` marks
+`uefi_dtb` as `UPDATE` so the cert-patched `uefi_dtbs.xz` is actually
+packed into the capsule and exercised, not just a build input. With
+`--patch-cert`, this is a single `create` invocation:
 
 ```sh
+qcom-capsule-tool gen-test-certs -o Certificates/
+
 qcom-capsule-tool create \
-  -fwver 0.0.A.B \
+  -fwver 0.0.1.2 \
   -lfwver 0.0.0.0 \
   -config config.json \
   -p Certificates/QcFMPCert.pem \
   -x Certificates/QcFMPRoot.pub.pem \
   -oc Certificates/QcFMPSub.pub.pem \
-  -guid <ESRT GUID> \
-  -capsule <capsule_name>.cap \
-  -images /Images \
-  -S <StorageType> \
-  -T <Target> \
-  --edk2-path /path/to/edk2 \
-  --ptool-path /path/to/qcom-ptool
+  -guid 0F6D58FC-2258-4D27-9E23-D77219B0897C \
+  -capsule capsule_file.cap \
+  -images bootbinaries/spinor \
+  -S NORUFS \
+  -T IQ-X7181 \
+  --patch-cert Certificates/QcFMPRoot.cer \
+  --update-partitions uefi_dtb
 ```
 
- - `--edk2-path <dir>`: Path to an existing edk2 directory with built
-   `GenFfs`/`GenFv` tools. `GenerateCapsule.py` and its `Common/`
-   dependency are also resolved from this tree.
- - `--ptool-path <dir>`: Path to an existing `qcom-ptool` checkout.
-   When provided, the repository is not cloned from GitHub.
+Or the equivalent broken out into the individual 5 steps:
+
+```sh
+qcom-capsule-tool gen-test-certs -o Certificates/
+
+qcom-capsule-tool update-fv-xml -T IQ-X7181 -S NORUFS \
+  --update-partitions uefi_dtb
+
+xz -dkc bootbinaries/spinor/uefi_dtbs.xz > uefi_dtbs.elf
+qcom-capsule-tool patch-capsule-cert \
+  uefi_dtbs.elf Certificates/QcFMPRoot.cer uefi_dtbs.elf.patched
+xz -zc uefi_dtbs.elf.patched > bootbinaries/spinor/uefi_dtbs.xz
+
+qcom-capsule-tool sysfw-version-create \
+  -Gen -FwVer 0.0.1.2 -LFwVer 0.0.0.0 -O SYSFW_VERSION.bin
+
+qcom-capsule-tool fv-create firmware.fv -FvType SYS_FW FvUpdate.xml \
+  SYSFW_VERSION.bin ./bootbinaries/spinor
+
+qcom-capsule-tool update-json -j config.json -f SYS_FW \
+  -b SYSFW_VERSION.bin -pf firmware.fv \
+  -p Certificates/QcFMPCert.pem \
+  -x Certificates/QcFMPRoot.pub.pem \
+  -oc Certificates/QcFMPSub.pub.pem \
+  -g 0F6D58FC-2258-4D27-9E23-D77219B0897C
+
+qcom-capsule-tool generate-capsule -e -j config.json -o capsule_file.cap \
+  --capflag PersistAcrossReset -v
+```
+
+Or reuse the Makefile end-to-end (same steps, with real boot binaries
+downloaded and cached automatically):
+
+```sh
+cd uefi_capsule_generation
+make test TARGET=iqx7181   # or TARGET=iqx5121
+```

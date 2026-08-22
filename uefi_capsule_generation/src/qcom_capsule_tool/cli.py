@@ -20,13 +20,6 @@ import sys
 # when their subcommand is actually invoked.
 
 
-def _cmd_setup(argv):
-    sys.argv = ["qcom-capsule-tool setup"] + argv
-    from qcom_capsule_tool.capsule_setup import main
-
-    main()
-
-
 def _cmd_create(argv):
     sys.argv = ["qcom-capsule-tool create"] + argv
     from qcom_capsule_tool.capsule_creator import main
@@ -37,6 +30,13 @@ def _cmd_create(argv):
 def _cmd_fv_create(argv):
     sys.argv = ["qcom-capsule-tool fv-create"] + argv
     from qcom_capsule_tool.FVCreation import main
+
+    main()
+
+
+def _cmd_generate_capsule(argv):
+    sys.argv = ["qcom-capsule-tool generate-capsule"] + argv
+    from qcom_capsule_tool.generate_capsule import main
 
     main()
 
@@ -76,10 +76,20 @@ def _cmd_patch_capsule_cert(argv):
     main()
 
 
+def _cmd_gen_test_certs(argv):
+    sys.argv = ["qcom-capsule-tool gen-test-certs"] + argv
+    from qcom_capsule_tool.gen_test_certs import main
+
+    main()
+
+
 SUBCOMMANDS = {
-    "setup": ("Set up edk2 build environment", _cmd_setup),
     "create": ("Run the full capsule generation pipeline", _cmd_create),
     "fv-create": ("Create a firmware volume from XML + binaries", _cmd_fv_create),
+    "generate-capsule": (
+        "Generate a signed FMP capsule from JSON",
+        _cmd_generate_capsule,
+    ),
     "update-fv-xml": ("Generate FvUpdate.xml from partitions.conf", _cmd_update_fv_xml),
     "update-json": ("Update JSON config with firmware parameters", _cmd_update_json),
     "sysfw-version-create": (
@@ -90,6 +100,10 @@ SUBCOMMANDS = {
     "patch-capsule-cert": (
         "Patch QcCapsuleRootCert in a uefi_dtbs or xbl_config ELF (auto-detected)",
         _cmd_patch_capsule_cert,
+    ),
+    "gen-test-certs": (
+        "Generate a throwaway OEM Root/Sub/Leaf cert chain for testing",
+        _cmd_gen_test_certs,
     ),
 }
 
