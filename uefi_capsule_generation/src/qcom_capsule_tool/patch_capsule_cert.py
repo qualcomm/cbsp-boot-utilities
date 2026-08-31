@@ -15,6 +15,9 @@ Auto-detects the ELF type by scanning program-header payloads:
 
 Both paths accept a plain DER (.cer) certificate file.
 
+A `.xz`-suffixed input or output path is transparently decompressed/
+recompressed (pure-Python `lzma`) around the patch step.
+
 Usage:
     qcom-capsule-tool patch-capsule-cert <input.elf> <cert.cer> <output.elf> \\
         [--prop-name QcCapsuleRootCert]
@@ -23,6 +26,7 @@ Usage:
 import argparse
 import hashlib
 import io
+import lzma
 import os
 import re
 import struct
@@ -880,26 +884,14 @@ def _patch_xbl_config(
 # ============================================================
 
 
-def patch_capsule_cert(
+def _patch_capsule_cert_elf(
     elf_path: str,
     cert_cer_path: str,
     output_path: str,
-    prop_name: str = _DEFAULT_PROP_NAME,
-    meta_ph_index: int = 1,
+    prop_name: str,
+    meta_ph_index: int,
 ) -> str:
-    """
-    Patch the capsule root certificate in *elf_path* and write to *output_path*.
-
-    Args:
-        elf_path:       Input ELF (uefi_dtbs or xbl_config).
-        cert_cer_path:  DER certificate file (.cer).
-        output_path:    Path for the patched output ELF.
-        prop_name:      DTB property name to patch (default: QcCapsuleRootCert).
-        meta_ph_index:  PH index of the XBLConfig metadata blob (default: 1).
-
-    Returns:
-        Detected ELF type string ("uefi_dtbs" or "xbl_config").
-    """
+    """Patch a plain (non-xz) ELF. See patch_capsule_cert() for the public API."""
     elf_type = detect_elf_type(elf_path, meta_ph_index)
     print(f"[+] Detected ELF type : {elf_type}")
 
@@ -930,6 +922,71 @@ def patch_capsule_cert(
             prop_name=prop_name,
             meta_ph_index=meta_ph_index,
         )
+
+    return elf_type
+
+
+def patch_capsule_cert(
+    elf_path: str,
+    cert_cer_path: str,
+    output_path: str,
+    prop_name: str = _DEFAULT_PROP_NAME,
+    meta_ph_index: int = 1,
+) -> str:
+    """
+    Patch the capsule root certificate in *elf_path* and write to *output_path*.
+
+    If *elf_path* ends in ``.xz``, it is transparently decompressed to a
+    temporary ELF before patching. If *output_path* ends in ``.xz``, the
+    patched ELF is recompressed before being written out. Either, both, or
+    neither may be ``.xz`` -- e.g. patching an xz input into a plain ELF
+    output, or vice versa, both work.
+
+    Args:
+        elf_path:       Input ELF (uefi_dtbs or xbl_config), optionally `.xz`.
+        cert_cer_path:  DER certificate file (.cer).
+        output_path:    Path for the patched output ELF, optionally `.xz`.
+        prop_name:      DTB property name to patch (default: QcCapsuleRootCert).
+        meta_ph_index:  PH index of the XBLConfig metadata blob (default: 1).
+
+    Returns:
+        Detected ELF type string ("uefi_dtbs" or "xbl_config").
+    """
+    input_is_xz = elf_path.endswith(".xz")
+    output_is_xz = output_path.endswith(".xz")
+
+    if not input_is_xz and not output_is_xz:
+        return _patch_capsule_cert_elf(
+            elf_path, cert_cer_path, output_path, prop_name, meta_ph_index
+        )
+
+    decompressed_fd, decompressed_path = tempfile.mkstemp(suffix=".elf")
+    os.close(decompressed_fd)
+    patched_fd, patched_path = tempfile.mkstemp(suffix=".elf")
+    os.close(patched_fd)
+    try:
+        if input_is_xz:
+            with lzma.open(elf_path, "rb") as src, open(decompressed_path, "wb") as dst:
+                dst.write(src.read())
+            source_elf = decompressed_path
+        else:
+            source_elf = elf_path
+
+        elf_type = _patch_capsule_cert_elf(
+            source_elf, cert_cer_path, patched_path, prop_name, meta_ph_index
+        )
+
+        if output_is_xz:
+            with open(patched_path, "rb") as src, lzma.open(output_path, "wb") as dst:
+                dst.write(src.read())
+        else:
+            os.replace(patched_path, output_path)
+    finally:
+        for tmp in (decompressed_path, patched_path):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
     return elf_type
 
