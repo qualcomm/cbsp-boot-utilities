@@ -15,7 +15,8 @@
 # All Python tool invocations run inside the poetry-managed venv via
 # `poetry run`, so a single `poetry install` is the only setup step
 # developers need. `make test` downloads boot binaries from public
-# URLs, generates a throwaway test cert chain, patches xbl_config.elf
+# URLs, generates a throwaway test cert chain, patches the target's
+# root-cert carrier (xbl_config.elf, or uefi_dtbs.xz for iqx7181/iqx5121)
 # with the new root cert, then drives qcom-capsule-tool end-to-end.
 # Output lands in build/$(TARGET)/capsule_file.cap.
 # --------------------------------------------------------------------
@@ -42,11 +43,38 @@ qcs8300_BOOT_URL := https://softwarecenter.qualcomm.com/nexus/generic/product/ch
 qcs9100_PV       := 00123
 qcs9100_BOOT_URL := https://softwarecenter.qualcomm.com/nexus/generic/product/chip/tech-package/QCS9100_bootbinaries.1.0/qcs9100_bootbinaries.1.0-test-device-public/00123/QCS9100_bootbinaries_00123.zip
 
+iqx7181_PV       := 00018
+iqx7181_BOOT_URL := https://softwarecenter.qualcomm.com/nexus/generic/product/chip/tech-package/Hamoa_bootbinaries.1.0/hamoa_bootbinaries.1.0-test-device-public/00018/HAMOA_bootbinaries_00018.zip
+iqx7181_FV_PLATFORM := IQ-X7181
+
+# IQ-X5121 ships the same boot binaries as IQ-X7181 -- only the
+# update-fv-xml platform name (-T) differs; both map to the same
+# iq-x7181-evk partitions.conf in UpdateFvXml.py's SUPPORTED_PLATFORMS.
+iqx5121_PV       := $(iqx7181_PV)
+iqx5121_BOOT_URL := $(iqx7181_BOOT_URL)
+iqx5121_FV_PLATFORM := IQ-X5121
+
 # SM8750 is intentionally absent: its QcCapsuleRootCert node lives in
 # uefi_dtbs.elf rather than xbl_config.elf, so the patching pipeline
 # below doesn't apply.
 
-SUPPORTED_TARGETS := qcs6490 qcs8300 qcs9100
+SUPPORTED_TARGETS := qcs6490 qcs8300 qcs9100 iqx7181 iqx5121
+
+# IQ-X7181/IQ-X5121's QcCapsuleRootCert node lives in uefi_dtbs.xz (an
+# xz-compressed ELF), not xbl_config.elf, and they don't ship a
+# hand-maintained FvUpdate.xml -- both are generated on the fly below.
+# Their boot binaries archive also unpacks to per-storage-type subdirs
+# (spinor/ufs/nvme) rather than landing flat, unlike the other targets'
+# archives.
+ifneq (,$(filter $(TARGET),iqx7181 iqx5121))
+PATCH_SENTINEL  = $(WORK)/.uefi_dtbs.patched
+FVUPDATE_CMD    = $(QCT) update-fv-xml -T $($(TARGET)_FV_PLATFORM) -S NORUFS --update-partitions uefi_dtb
+BOOTBIN_RELDIR  = bootbinaries/spinor
+else
+PATCH_SENTINEL  = $(WORK)/.xbl_config.patched
+FVUPDATE_CMD    = cp $(FVUPDATE) FvUpdate.xml
+BOOTBIN_RELDIR  = bootbinaries
+endif
 
 # ---- User-overridable knobs ----------------------------------------
 
@@ -195,7 +223,7 @@ $(WORK)/.xbl_config.patched: $(WORK)/.bootbinaries.unpacked $(CERTS)/QcFMPRoot.i
 	set -e; \
 	export MSYS2_ARG_CONV_EXCL='*'; \
 	towin() { command -v cygpath >/dev/null 2>&1 && cygpath -m "$$1" || echo "$$1"; }; \
-	xbl=$$(towin $(WORK)/bootbinaries/xbl_config.elf); \
+	xbl=$$(towin $(WORK)/$(BOOTBIN_RELDIR)/xbl_config.elf); \
 	if [ ! -f "$$xbl" ]; then \
 	    echo "ERROR: $$xbl not found in extracted boot binaries"; exit 1; \
 	fi; \
@@ -204,19 +232,37 @@ $(WORK)/.xbl_config.patched: $(WORK)/.bootbinaries.unpacked $(CERTS)/QcFMPRoot.i
 	mv "$$xbl.patched" "$$xbl"; \
 	touch $@
 
+# ---- uefi_dtbs.xz patching (IQ-X7181) ------------------------------
+# IQ-X7181's QcCapsuleRootCert node lives inside uefi_dtbs.xz, an
+# xz-compressed ELF. patch-capsule-cert transparently decompresses/
+# recompresses `.xz`-suffixed paths around the patch step (pure-Python
+# lzma, no xz binary needed), so it can operate on the .xz file directly.
+
+$(WORK)/.uefi_dtbs.patched: $(WORK)/.bootbinaries.unpacked $(CERTS)/QcFMPRoot.inc $(INSTALL_STAMP)
+	set -e; \
+	export MSYS2_ARG_CONV_EXCL='*'; \
+	towin() { command -v cygpath >/dev/null 2>&1 && cygpath -m "$$1" || echo "$$1"; }; \
+	dtbs_xz=$$(towin $(WORK)/$(BOOTBIN_RELDIR)/uefi_dtbs.xz); \
+	if [ ! -f "$$dtbs_xz" ]; then \
+	    echo "ERROR: $$dtbs_xz not found in extracted boot binaries"; exit 1; \
+	fi; \
+	cer=$$(towin $(CERTS)/QcFMPRoot.cer); \
+	$(QCT) patch-capsule-cert "$$dtbs_xz" "$$cer" "$$dtbs_xz"; \
+	touch $@
+
 # ---- Capsule generation --------------------------------------------
 
 $(WORK)/capsule_file.cap: \
-		$(WORK)/.xbl_config.patched \
+		$(PATCH_SENTINEL) \
 		$(CERTS)/QcFMPRoot.inc \
 		| $(WORK)
 	set -e; \
 	cd $(WORK); \
-	cp $(FVUPDATE) FvUpdate.xml; \
+	$(FVUPDATE_CMD); \
 	$(QCT) sysfw-version-create -Gen \
 	    -FwVer $(FW_VERSION) -LFwVer $(LOWEST_FW_VER) -O SYSFW_VERSION.bin; \
 	$(QCT) fv-create firmware.fv -FvType SYS_FW FvUpdate.xml \
-	    SYSFW_VERSION.bin ./bootbinaries; \
+	    SYSFW_VERSION.bin ./$(BOOTBIN_RELDIR); \
 	$(QCT) update-json -j config.json -f SYS_FW \
 	    -b SYSFW_VERSION.bin -pf firmware.fv \
 	    -p $(CERTS)/QcFMPCert.pem \
