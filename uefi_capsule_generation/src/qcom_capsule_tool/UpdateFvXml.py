@@ -158,7 +158,7 @@ def find_base_names(partition_info):
     return pairs
 
 
-def create_xml(args, pairs, partition_info):
+def create_xml(args, pairs, partition_info, update_partitions=None):
     doc = minidom.Document()
     fvitems = doc.createElement("FVItems")
     doc.appendChild(fvitems)
@@ -186,11 +186,13 @@ def create_xml(args, pairs, partition_info):
         else:
             dest_disk_type = backup_disk_type = "EMMC_PARTITION_USER_DATA"
 
+        operation = "UPDATE" if base in (update_partitions or set()) else "IGNORE"
+
         fw_entry = doc.createElement("FwEntry")
         for tag, text in [
             ("InputBinary", part_a["filename"]),
             ("InputPath", "Images"),
-            ("Operation", "IGNORE"),
+            ("Operation", operation),
             ("UpdateType", "UPDATE_PARTITION"),
             ("BackupType", "BACKUP_PARTITION"),
         ]:
@@ -256,6 +258,15 @@ def main():
         help="Path to an existing qcom-ptool directory; "
         "when provided, the repository is not cloned",
     )
+    parser.add_argument(
+        "--update-partitions",
+        dest="update_partitions",
+        default=None,
+        help="Comma-separated base partition names (e.g. dtb,uefi_dtb) to mark "
+        "Operation=UPDATE in the generated FvUpdate.xml; all other entries "
+        "stay Operation=IGNORE. Omit to keep every entry IGNORE (unchanged "
+        "default behavior).",
+    )
     args = parser.parse_args()
 
     repo_dir = args.ptool_path if args.ptool_path else DEFAULT_REPO_DIR
@@ -304,7 +315,12 @@ def main():
         print(
             "Warning: No partition pairs (_a/_b or _BACKUP) found. FvUpdate.xml will not contain FwEntry blocks."
         )
-    doc = create_xml(args, pairs, partition_info)
+    update_partitions = (
+        {name.strip() for name in args.update_partitions.split(",") if name.strip()}
+        if args.update_partitions
+        else None
+    )
+    doc = create_xml(args, pairs, partition_info, update_partitions)
     write_xml(doc)
     print(
         f"FvUpdate.xml has been created successfully with StorageType={args.StorageType}."
