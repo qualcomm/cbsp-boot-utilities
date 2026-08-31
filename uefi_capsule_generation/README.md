@@ -69,11 +69,12 @@ make test-all              # iterate over every supported chip
 make clean
 ```
 
-Supported `TARGET`s: `qcs6490`, `qcs8300`, `qcs9100`. The
-`test` target downloads chip-specific boot binaries from public URLs,
-generates a throwaway test cert chain, patches `xbl_config.elf` with
-the new root cert, and runs `qcom-capsule-tool` end-to-end. Output
-lands in `build/$(TARGET)/capsule_file.cap`.
+Supported `TARGET`s: `qcs6490`, `qcs8300`, `qcs9100`, `iqx7181`, `iqx5121`.
+The `test` target downloads chip-specific boot binaries from public URLs,
+generates a throwaway test cert chain, patches the target's root-cert
+carrier (`xbl_config.elf` for qcs6490/qcs8300/qcs9100, `uefi_dtbs.xz` for
+iqx7181/iqx5121) with the new root cert, and runs `qcom-capsule-tool`
+end-to-end. Output lands in `build/$(TARGET)/capsule_file.cap`.
 
 ## 3. Working of the Host Signing Tool
 
@@ -139,19 +140,22 @@ For more information on the QDTE Tool, refer to the
 ### 3.2 Setting QcCapsuleRootCert Without QDTE
 
 As an alternative to QDTE, use the `patch-capsule-cert` subcommand to patch
-the certificate directly into `uefi_dtbs.elf` or `xbl_config.elf`. The ELF
-type is auto-detected at runtime, so the same command and `.cer` file work
-for both targets.
+the certificate directly into `uefi_dtbs.elf`/`uefi_dtbs.xz` or
+`xbl_config.elf`. The ELF type is auto-detected at runtime, and a `.xz`
+input or output path is transparently decompressed/recompressed
+(pure-Python `lzma`, no `xz` binary required) around the patch step -- the
+same command and `.cer` file work for all three cases.
 
 ```sh
 qcom-capsule-tool patch-capsule-cert <input.elf> <cert.cer> <output.elf>
 ```
 
-- `<input.elf>`: Input ELF file — either `uefi_dtbs.elf` (for targets
+- `<input.elf>`: Input file -- `uefi_dtbs.elf`/`uefi_dtbs.xz` (for targets
   IQ-X7181, IQ-X5121, Kaanapali, SM8750, QRB2210-RB1, CQ2390M) or
   `xbl_config.elf` (for QCS6490, QCS9100, QCS8300, QCS615).
 - `<cert.cer>`: DER certificate file (e.g. `QcFMPRoot.cer` or `NewRoot.cer`).
-- `<output.elf>`: Path for the patched output ELF.
+- `<output.elf>`: Path for the patched output file. Give it a `.xz` suffix
+  to have the patched ELF recompressed on write.
 
 Optional arguments:
 
@@ -163,6 +167,13 @@ Example for a `uefi_dtbs` target:
 ```sh
 qcom-capsule-tool patch-capsule-cert \
   uefi_dtbs.elf QcFMPRoot.cer uefi_dtbs_patched.elf
+```
+
+Example for an xz-compressed `uefi_dtbs` target (IQ-X7181/IQ-X5121):
+
+```sh
+qcom-capsule-tool patch-capsule-cert \
+  bootbinaries/spinor/uefi_dtbs.xz QcFMPRoot.cer bootbinaries/spinor/uefi_dtbs.xz
 ```
 
 Example for a `xbl_config` target:
@@ -224,10 +235,15 @@ git clone https://github.com/quic/cbsp-boot-utilities.git
    - `-F <partition.conf>`: Path to a local `partition.conf` file.
    - `--ptool-path <dir>`: Path to an existing `qcom-ptool` checkout.
      When provided, the repository is not cloned from GitHub.
+   - `--update-partitions <name1,name2,...>`: Comma-separated base
+     partition names (e.g. `dtb,uefi_dtb` or `XBL_SC,uefi_dtb`) whose
+     `FwEntry.Operation` should be set to `UPDATE`; every other entry is
+     left at `IGNORE`. Omit the flag to keep the previous behavior (every
+     entry `IGNORE` — you then edit the XML by hand, see below).
 
    Once `FvUpdate.xml` is generated, update the `Operation` field for
-   each firmware entry as needed. By default the operation is set to
-   `IGNORE`.
+   each firmware entry as needed if you didn't use `--update-partitions`.
+   By default the operation is set to `IGNORE`.
 
 1. **Create Firmware Volume (FV):**
 
@@ -346,3 +362,116 @@ qcom-capsule-tool create \
    when `-T Glymur` is used.
  - `--ptool-path <dir>`: Optional path to an existing `qcom-ptool`
    checkout. When provided, the repository is not cloned from GitHub.
+ - `--patch-cert <QcFMPRoot.cer>`: Optional. Path to the DER certificate to
+   patch in. Required when `--patch-image` is given.
+ - `--patch-image <path>`: Optional, repeatable. Path to an image to patch
+   `QcCapsuleRootCert` into (`uefi_dtbs.elf`, `uefi_dtbs.xz`, or
+   `xbl_config.elf` under `-images`) before the firmware volume is
+   created. ELF type and `.xz` compression are auto-detected by
+   `patch-capsule-cert` -- pass one `--patch-image` per file to patch.
+   Patched copies (same basename) are staged in `./patched_images/` and
+   searched ahead of `-images`, so the original files under `-images`
+   are never modified. Omit if the images are already patched (e.g. via
+   a separate `patch-capsule-cert` step).
+ - `--update-partitions <name1,name2,...>`: Optional. Forwarded verbatim
+   to `update-fv-xml`'s own `--update-partitions` (see step 2 above) when
+   `create` generates `FvUpdate.xml` internally. Omit to keep every entry
+   `IGNORE` (unchanged default behavior).
+
+### Example: full pipeline for IQ-X7181 (Hamoa)
+
+IQ-X7181/IQ-X5121 ship their root cert inside `uefi_dtbs.xz` (SPINOR
+layout) rather than `xbl_config.elf`. `--update-partitions` marks
+`uefi_dtb` as `UPDATE` so the cert-patched `uefi_dtbs.xz` is actually
+packed into the capsule and exercised, not just a build input. With
+`--patch-cert`/`--patch-image`, this is a single `create` invocation:
+
+Generate a throwaway test cert chain first (this mirrors the Makefile's
+`$(CERTS)/QcFMPRoot.inc` recipe -- run it once, not Hamoa/Purwa-specific;
+this is a throwaway chain, self-signed with a well-known password, do
+not use it for production capsules):
+
+```sh
+mkdir -p Certificates && cd Certificates
+cp ../../.github/opensslroot.cfg .
+mkdir -p demoCA/newcerts && : > demoCA/index.txt && echo 01 > demoCA/serial
+openssl rand -out randfile 256
+pw=testpassword
+openssl genrsa -aes256 -passout pass:$pw -out QcFMPRoot.key 2048
+openssl req -new -x509 -config opensslroot.cfg \
+  -subj '/CN=OEM Root CA/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US' \
+  -days 3650 -passin pass:$pw -key QcFMPRoot.key -out QcFMPRoot.crt
+openssl x509 -in QcFMPRoot.crt -out QcFMPRoot.cer -outform DER
+openssl x509 -inform DER -in QcFMPRoot.cer -outform PEM -out QcFMPRoot.pub.pem
+openssl genrsa -aes256 -passout pass:$pw -out QcFMPSub.key 2048
+openssl req -new -config opensslroot.cfg \
+  -subj '/CN=OEM Intermediate CA/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US' \
+  -passin pass:$pw -key QcFMPSub.key -out QcFMPSub.csr
+openssl ca -config opensslroot.cfg -extensions v3_ca -batch \
+  -in QcFMPSub.csr -days 3650 -out QcFMPSub.crt -cert QcFMPRoot.crt \
+  -passin pass:$pw -keyfile QcFMPRoot.key
+openssl x509 -in QcFMPSub.crt -outform PEM -out QcFMPSub.pub.pem
+openssl genrsa -aes256 -passout pass:$pw -out QcFMPCert.key 2048
+openssl req -new -config opensslroot.cfg \
+  -subj '/CN=OEM User/O=FMP/OU=OEM Key/L=San Diego/ST=California/C=US' \
+  -passin pass:$pw -key QcFMPCert.key -out QcFMPCert.csr
+openssl ca -config opensslroot.cfg -batch -in QcFMPCert.csr -days 3650 \
+  -out QcFMPCert.crt -cert QcFMPSub.crt -passin pass:$pw -keyfile QcFMPSub.key
+openssl pkcs12 -export -passout pass:$pw -out QcFMPCert.pfx \
+  -passin pass:$pw -inkey QcFMPCert.key -in QcFMPCert.crt
+openssl pkcs12 -passin pass:$pw -in QcFMPCert.pfx -nodes -out QcFMPCert.pem
+cd ..
+```
+
+```sh
+qcom-capsule-tool create \
+  -fwver 0.0.1.2 \
+  -lfwver 0.0.0.0 \
+  -config config.json \
+  -p Certificates/QcFMPCert.pem \
+  -x Certificates/QcFMPRoot.pub.pem \
+  -oc Certificates/QcFMPSub.pub.pem \
+  -guid 0F6D58FC-2258-4D27-9E23-D77219B0897C \
+  -capsule capsule_file.cap \
+  -images bootbinaries/spinor \
+  -S NORUFS \
+  -T IQ-X7181 \
+  --patch-cert Certificates/QcFMPRoot.cer \
+  --patch-image bootbinaries/spinor/uefi_dtbs.xz \
+  --update-partitions uefi_dtb
+```
+
+Or the equivalent broken out into the individual 5 steps:
+
+```sh
+qcom-capsule-tool update-fv-xml -T IQ-X7181 -S NORUFS \
+  --update-partitions uefi_dtb
+
+qcom-capsule-tool patch-capsule-cert \
+  bootbinaries/spinor/uefi_dtbs.xz Certificates/QcFMPRoot.cer \
+  bootbinaries/spinor/uefi_dtbs.xz
+
+qcom-capsule-tool sysfw-version-create \
+  -Gen -FwVer 0.0.1.2 -LFwVer 0.0.0.0 -O SYSFW_VERSION.bin
+
+qcom-capsule-tool fv-create firmware.fv -FvType SYS_FW FvUpdate.xml \
+  SYSFW_VERSION.bin ./bootbinaries/spinor
+
+qcom-capsule-tool update-json -j config.json -f SYS_FW \
+  -b SYSFW_VERSION.bin -pf firmware.fv \
+  -p Certificates/QcFMPCert.pem \
+  -x Certificates/QcFMPRoot.pub.pem \
+  -oc Certificates/QcFMPSub.pub.pem \
+  -g 0F6D58FC-2258-4D27-9E23-D77219B0897C
+
+qcom-capsule-tool generate-capsule -e -j config.json -o capsule_file.cap \
+  --capflag PersistAcrossReset -v
+```
+
+Or reuse the Makefile end-to-end (same steps, with real boot binaries
+downloaded and cached automatically):
+
+```sh
+cd uefi_capsule_generation
+make test TARGET=iqx7181   # or TARGET=iqx5121
+```
