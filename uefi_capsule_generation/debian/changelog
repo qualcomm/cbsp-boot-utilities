@@ -1,0 +1,5 @@
+qcom-capsule-tool (1.0.0) noble; urgency=medium
+
+  * Initial Debian packaging of qcom-capsule-tool.
+
+ -- Guanquan Tian <guanquan@qti.qualcomm.com>  Tue, 16 Sep 2026 00:00:00 +0800

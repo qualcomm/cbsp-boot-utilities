@@ -42,6 +42,22 @@ poetry run qcom-capsule-tool --help
 and dev dependencies (ruff, mypy). Prefix subsequent commands with
 `poetry run`, or enter a shell with `poetry shell`.
 
+**Ubuntu -- build and install a `.deb`:**
+
+```sh
+cd uefi_capsule_generation
+sudo apt-get build-dep .   # installs the Build-Depends listed in debian/control
+dpkg-buildpackage -us -uc -b
+sudo apt-get install -f ../python3-qcom-capsule-tool_*.deb
+```
+
+This produces `python3-qcom-capsule-tool`, which installs the
+`qcom-capsule-tool` command to `/usr/bin` along with its `python3-libfdt`
+and `python3-pyelftools` dependencies from the Ubuntu archive -- no
+`pip`/`poetry` step required on the target machine. Useful for baking the
+tool into a build image or installing it as a build dependency in a
+kernel/firmware build pipeline.
+
 Subcommands wrap the individual tools:
 
 | Subcommand              | Replaces script             |

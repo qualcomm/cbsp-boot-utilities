@@ -1,0 +1,6 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=qcom-capsule-tool
+
+%:
+	dh $@ --buildsystem=pybuild --with python3
