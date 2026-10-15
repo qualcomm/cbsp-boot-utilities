@@ -1,0 +1,28 @@
+Source: qcom-capsule-tool
+Section: utils
+Priority: optional
+Maintainer: Qualcomm Innovation Center <noreply@qualcomm.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-python,
+               pybuild-plugin-pyproject,
+               python3-all,
+               python3-poetry-core,
+               python3-pyelftools,
+               python3-libfdt,
+               python3-pytest,
+               openssl
+Standards-Version: 4.6.2
+Homepage: https://github.com/quic/cbsp-boot-utilities
+Rules-Requires-Root: no
+
+Package: python3-qcom-capsule-tool
+Architecture: any
+Depends: ${python3:Depends},
+         ${misc:Depends},
+         python3-pyelftools,
+         python3-libfdt
+Recommends: openssl
+Description: Qualcomm capsule generation tools for UEFI firmware updates
+ Utilities to create UEFI capsule files for firmware updates: firmware
+ volume (FV) construction, capsule signing/generation, DTB root-cert
+ patching, and related helpers, exposed via the qcom-capsule-tool CLI.
