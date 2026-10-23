@@ -12,7 +12,6 @@ packages = [{ include = "qcom_capsule_tool", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.9"
-defusedxml = "*"
 pyelftools = "*"
 pylibfdt = "*"
 
@@ -39,5 +38,5 @@ python_version = "3.9"
 # Third-party deps without type stubs or py.typed markers. Silence
 # mypy's import-untyped error rather than wrapping each call site.
 [[tool.mypy.overrides]]
-module = ["libfdt", "elftools.*", "defusedxml.*"]
+module = ["libfdt", "elftools.*"]
 ignore_missing_imports = true
