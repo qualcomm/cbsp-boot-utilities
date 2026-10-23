@@ -476,6 +476,7 @@ def process_sys_fw_ffs_creation(
 
     except Exception:
         print(traceback.format_exc())
+        return False
 
     return True
 
@@ -543,6 +544,7 @@ def generate_sys_fw_ffs_list(ls_ffs, ls_paths, g_dynamic_var):
 
     except Exception:
         print(traceback.format_exc())
+        return False
 
     return True
 
@@ -568,6 +570,7 @@ def generate_ffs_for_ec_fw(ls_ffs, s_ec_fw_file_name):
 
     except Exception:
         print(traceback.format_exc())
+        return False
 
     return True
 
@@ -579,6 +582,7 @@ def process_ec_fw_ffs_creation(s_ec_fw_file_name, ls_ffs):
             return False
     except Exception:
         print(traceback.format_exc())
+        return False
 
     return True
 
