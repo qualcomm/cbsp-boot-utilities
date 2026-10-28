@@ -4,13 +4,22 @@
 # --------------------------------------------------------------------
 
 
+import pyexpat
 import re
 import traceback
+import xml.etree.ElementTree as ET
 from collections import OrderedDict
 
-import defusedxml.ElementTree as ET
-
 from . import FVCreation_header as FVC_h
+
+# ElementTree never resolves external entities, and expat 2.4.1+ rejects
+# entity-amplification attacks ("billion laughs"), so the stdlib parser is
+# safe for FvUpdate.xml as long as expat is not older than that.
+if pyexpat.version_info < (2, 4, 1):
+    raise ImportError(
+        "expat %s is too old to parse FvUpdate.xml safely; 2.4.1 or newer is required"
+        % pyexpat.EXPAT_VERSION
+    )
 
 
 def print_all_level_d(d, indent=0, log_file_obj=None):
@@ -100,6 +109,8 @@ def xml_to_dict(ele):
 def parse_input_xml(s_xml_file, s_breaking_change_number, g_dynamic_var):
 
     try:
+        # Safe with the stdlib parser: see the expat version guard at the top.
+        # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
         tree = ET.parse(s_xml_file)
         root = tree.getroot()
 
