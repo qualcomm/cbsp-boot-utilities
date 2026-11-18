@@ -1,4 +1,7 @@
+# --------------------------------------------------------------------
+# Copyright (c) 2026 Renan Prata
 # SPDX-License-Identifier: BSD-3-Clause-Clear
+# --------------------------------------------------------------------
 
 """bin-to-hex output, as read back by patch-capsule-cert (@list:)."""
 
