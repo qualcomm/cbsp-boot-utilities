@@ -390,22 +390,21 @@ int main(int argc, char *argv[])
 
     LOGD("send modified cmd: start");
 
-    memset(&ihandle, 0, sizeof(ihandle));
-
-    /* allocate 20B memory */
-    ret = qsc_ION_memalloc(&ihandle, ION_BUFFER_LENGTH);
-    if (ret) {
-      LOGD("Error allocating memory in ion\n");
-      return -1;
-    }
-
-    memset(&ion_fd_info, 0, sizeof(struct QSEECom_ion_fd_info));
-
     TZ_SVC_REQ_VAR_SYNC_VAR_TABLES *req =
       (TZ_SVC_REQ_VAR_SYNC_VAR_TABLES *) l_QSEEComHandle->ion_sbuffer;
     TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *rsp = NULL;
 
     do {
+      /* allocate 20B memory: the end of every pass frees it */
+      memset(&ihandle, 0, sizeof(ihandle));
+      ret = qsc_ION_memalloc(&ihandle, ION_BUFFER_LENGTH);
+      if (ret) {
+        LOGE("Error allocating memory in ion\n");
+        return -1;
+      }
+
+      memset(&ion_fd_info, 0, sizeof(struct QSEECom_ion_fd_info));
+
       req->cmd_id = SERVICE_UEFI_VAR_SYNC_VAR_TABLES;
       req->table_id = TABLE_ID_RESERVED;
       req->len = ION_BUFFER_LENGTH ;
@@ -443,7 +442,7 @@ int main(int argc, char *argv[])
       if (rsp_len & QSEECOM_ALIGN_MASK)
         rsp_len = QSEECOM_ALIGN(rsp_len);
 
-      rsp = (TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *)l_QSEEComHandle->ion_sbuffer + req_len;
+      rsp = (TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *)(l_QSEEComHandle->ion_sbuffer + req_len);
       rsp->status = 0;
 
       LOGD("req len = %d bytes",req_len);
