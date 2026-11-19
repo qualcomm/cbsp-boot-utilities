@@ -20,10 +20,10 @@ def bin_to_hex(input_file, output_file):
 
     hex_chunks = [header]
     for i in range(0, len(binary_data), 4):
-        chunk = binary_data[i : i + 4]
-        hex_chunk = "".join(f"{byte:02x}" for byte in chunk)
-        # Ensure each chunk is 8 hex digits.
-        hex_chunks.append(hex_chunk.zfill(8))
+        # Pad a short last chunk with zeros after the data: the header
+        # holds the real length, so the reader keeps only the first bytes.
+        chunk = binary_data[i : i + 4].ljust(4, b"\x00")
+        hex_chunks.append(chunk.hex())
 
     try:
         with open(output_file, "w") as f:
