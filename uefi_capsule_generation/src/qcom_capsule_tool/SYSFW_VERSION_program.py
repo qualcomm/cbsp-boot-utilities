@@ -127,6 +127,16 @@ class QSYS_FW_VERSION_DATA(ctypes.Structure):
 class Arguments:
     MINIMUM_ARGUMENT_COUNT = 4
     MAXIMUM_ARGUMENT_COUNT = 6
+    PARAMETER_NAMES = (
+        "Gen",
+        "FwVer",
+        "LFwVer",
+        "O",
+        "PrintAll",
+        "View",
+        "GetFwVersionHex",
+        "GetLSFwVersionHex",
+    )
 
     def __init__(self):
         self.parameters = {}
@@ -139,6 +149,10 @@ class Arguments:
 
         for txt in args:
             parts = splitter.split(txt, maxsplit=2)
+            # "/Name" is a parameter only for a known name; anything else,
+            # such as an absolute path, is a value.
+            if txt.startswith("/") and parts[1] not in self.PARAMETER_NAMES:
+                parts = [txt]
             if len(parts) == 1:
                 if parameter is not None:
                     if parameter not in self.parameters:
@@ -271,7 +285,6 @@ def generate_binary_file(args):
 
     if args["O"]:
         OutputBinary = args["O"]
-        FileName = os.path.basename(OutputBinary)
     else:
         print("ERROR: Value to the parameter -o is not specified")
         return False
@@ -283,9 +296,7 @@ def generate_binary_file(args):
     FwVerBinaryData.VersionDataCrc32 = CalcCRC32_i(
         FwVerBinaryData.to_bytes(), FwVerBinaryData.VersionDataSize
     )
-    output_file_path = os.path.join(os.getcwd(), FileName)
-
-    with open(output_file_path, "wb") as fw_file:
+    with open(OutputBinary, "wb") as fw_file:
         fw_file.write(FwVerBinaryData.to_bytes())
 
     return True
@@ -294,13 +305,10 @@ def generate_binary_file(args):
 def get_fw_version_hex(args):
 
     if args["GetFwVersionHex"]:
-        OutputBinary = args["GetFwVersionHex"]
-        FileName = os.path.basename(OutputBinary)
+        FilePath = args["GetFwVersionHex"]
     else:
         print("ERROR: Value to the parameter -GetFwVersionHex is not specified")
         return False
-
-    FilePath = os.path.join(os.getcwd(), FileName)
 
     with open(FilePath, mode="rb") as file:
         file_content = file.read()
@@ -312,13 +320,10 @@ def get_fw_version_hex(args):
 def get_ls_version_hex(args):
 
     if args["GetLSFwVersionHex"]:
-        OutputBinary = args["GetLSFwVersionHex"]
-        FileName = os.path.basename(OutputBinary)
+        FilePath = args["GetLSFwVersionHex"]
     else:
         print("ERROR: Value to the parameter -GetLSFwVersionHex is not specified")
         return False
-
-    FilePath = os.path.join(os.getcwd(), FileName)
 
     with open(FilePath, mode="rb") as file:
         file_content = file.read()
@@ -330,13 +335,10 @@ def get_ls_version_hex(args):
 def print_bin_contents(args):
 
     if args["PrintAll"]:
-        OutputBinary = args["PrintAll"]
-        FileName = os.path.basename(OutputBinary)
+        FilePath = args["PrintAll"]
     else:
         print("ERROR: Value to the parameter -PrintAll is not specified")
         return False
-
-    FilePath = os.path.join(os.getcwd(), FileName)
 
     with open(FilePath, mode="rb") as file:
         file_content = file.read()
