@@ -390,22 +390,25 @@ int main(int argc, char *argv[])
 
     LOGD("send modified cmd: start");
 
-    memset(&ihandle, 0, sizeof(ihandle));
-
-    /* allocate 20B memory */
-    ret = qsc_ION_memalloc(&ihandle, ION_BUFFER_LENGTH);
-    if (ret) {
-      LOGD("Error allocating memory in ion\n");
-      return -1;
-    }
-
-    memset(&ion_fd_info, 0, sizeof(struct QSEECom_ion_fd_info));
-
     TZ_SVC_REQ_VAR_SYNC_VAR_TABLES *req =
       (TZ_SVC_REQ_VAR_SYNC_VAR_TABLES *) l_QSEEComHandle->ion_sbuffer;
     TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *rsp = NULL;
 
     do {
+      /* qsc_ion_dealloc() at the end of each pass frees it */
+      memset(&ihandle, 0, sizeof(ihandle));
+      ret = qsc_ION_memalloc(&ihandle, ION_BUFFER_LENGTH);
+      if (ret) {
+        err++;
+        LOGE("Error allocating memory in ion\n");
+        if (argc == 2 && atoi(argv[1]) == 1)
+          return -1;
+        sleep(600);
+        continue;
+      }
+
+      memset(&ion_fd_info, 0, sizeof(struct QSEECom_ion_fd_info));
+
       req->cmd_id = SERVICE_UEFI_VAR_SYNC_VAR_TABLES;
       req->table_id = TABLE_ID_RESERVED;
       req->len = ION_BUFFER_LENGTH ;
@@ -427,7 +430,11 @@ int main(int argc, char *argv[])
           LOGE("return value of dealloc is %d",ret);
 	  printf("return value of dealloc is %d\n",ret);
 	}
-        return -1;
+        err++;
+        if (argc == 2 && atoi(argv[1]) == 1)
+          return -1;
+        sleep(600);
+        continue;
       }
 
       for (j = 0; j < ION_BUFFER_LENGTH; j++) {
@@ -443,7 +450,7 @@ int main(int argc, char *argv[])
       if (rsp_len & QSEECOM_ALIGN_MASK)
         rsp_len = QSEECOM_ALIGN(rsp_len);
 
-      rsp = (TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *)l_QSEEComHandle->ion_sbuffer + req_len;
+      rsp = (TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *)(l_QSEEComHandle->ion_sbuffer + req_len);
       rsp->status = 0;
 
       LOGD("req len = %d bytes",req_len);
