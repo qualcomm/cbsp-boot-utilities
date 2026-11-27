@@ -450,7 +450,7 @@ int main(int argc, char *argv[])
       if (rsp_len & QSEECOM_ALIGN_MASK)
         rsp_len = QSEECOM_ALIGN(rsp_len);
 
-      rsp = (TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *)l_QSEEComHandle->ion_sbuffer + req_len;
+      rsp = (TZ_SVC_RSP_VAR_SYNC_VAR_TABLES *)(l_QSEEComHandle->ion_sbuffer + req_len);
       rsp->status = 0;
 
       LOGD("req len = %d bytes",req_len);
